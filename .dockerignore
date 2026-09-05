@@ -1,0 +1,12 @@
+.git
+node_modules
+*.json
+!package.json
+!package-lock.json
+*.db
+*.log
+.env*
+__pycache__
+user_templates
+图标素材/上传包备份
+deployment-private*

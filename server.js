@@ -15,6 +15,7 @@ const { URL } = require('url');
 const crypto = require('crypto');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
+const auth = require('./auth');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const LEGACY_USERS_FILE = path.join(__dirname, 'users.json');
@@ -48,7 +49,7 @@ const WX_APP_SECRET = process.env.WX_APP_SECRET || '';
 const MYSQL_CONFIG = {
   host: process.env.MYSQL_HOST || '127.0.0.1',
   port: parseInt(process.env.MYSQL_PORT || '3306', 10),
-  user: process.env.MYSQL_USER || 'root',
+  user: process.env.MYSQL_USER || process.env.MYSQL_USERNAME || 'root',
   password: process.env.MYSQL_PASSWORD || '',
   database: process.env.MYSQL_DATABASE || 'cyber_forge',
   charset: 'utf8mb4',
@@ -378,6 +379,7 @@ async function initDatabase() {
     await ensureDefaultSettings();
     await migrateLegacyData();
   } catch (error) {
+    if (process.env.REQUIRE_DATABASE === 'true') throw error;
     useJsonStore = true;
     pool = null;
     await loadJsonStore();
@@ -1750,7 +1752,8 @@ function getGenerationJob(req, res, url) {
 }
 
 async function cancelGenerationJob(req, res) {
-  const { jobId, userId } = await parseRequestBody(req);
+  const { jobId } = await parseRequestBody(req);
+  const userId = req.auth.userId;
   const job = jobId ? generationJobs.get(jobId) : null;
 
   if (!job) {
@@ -1794,7 +1797,8 @@ function parseRequestBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Id, X-Quality, X-Device-Fingerprint');
 
@@ -1808,6 +1812,36 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
 
   try {
+    // 所有私有接口统一验证会话，忽略客户端自报的用户身份。
+    if (pathname.startsWith('/api/')) {
+      if (req.method === 'POST' && req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) {
+        sendJson(res, 403, { error: '不允许跨站请求' });
+        return;
+      }
+      req.auth = auth.session(req);
+      if (pathname === '/api/health') {
+        sendJson(res, 200, { success: true, database: useJsonStore ? 'local' : 'mysql' });
+        return;
+      }
+      if (pathname === '/api/admin/login' && req.method === 'POST') {
+        if (!auth.allowLogin(req)) { sendJson(res, 429, { error: '尝试过于频繁，请稍后重试' }); return; }
+        const data = await parseRequestBody(req);
+        if (!auth.checkPassword(data.password, process.env.ADMIN_PASSWORD)) {
+          sendJson(res, 401, { error: '管理员密码错误或尚未配置' }); return;
+        }
+        auth.login(req, res, ADMIN_USER_ID, true);
+        sendJson(res, 200, { success: true }); return;
+      }
+      if (pathname === '/api/logout' && req.method === 'POST') {
+        auth.logout(req, res); sendJson(res, 200, { success: true }); return;
+      }
+      const publicRoute = (req.method === 'GET' && ['/api/settings/public', '/api/templates'].includes(pathname))
+        || (req.method === 'POST' && pathname === '/api/login');
+      if (!publicRoute && !req.auth) { sendJson(res, 401, { error: '请先登录' }); return; }
+      if (pathname.startsWith('/api/admin/') && !req.auth?.admin) { sendJson(res, 403, { error: '需要管理员权限' }); return; }
+      if (pathname === '/api/login' && !auth.allowLogin(req)) { sendJson(res, 429, { error: '尝试过于频繁，请稍后重试' }); return; }
+      if (req.auth) req.headers['x-user-id'] = req.auth.userId;
+    }
     if (req.method === 'POST' && pathname === '/api/wechat/login') {
       const data = await parseRequestBody(req);
       const clientIp = ((req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0]).trim();
@@ -1900,12 +1934,13 @@ const server = http.createServer(async (req, res) => {
 
       }
 
+      auth.login(req, res, user.id);
       sendJson(res, 200, { success: true, user: normalizeUser(user), isNew });
       return;
     }
 
     if (req.method === 'GET' && pathname === '/api/user') {
-      const userId = url.searchParams.get('id');
+      const userId = req.auth.userId;
       const user = userId ? await getUserById(userId) : null;
       if (!user) {
         sendJson(res, 404, { error: '用户不存在' });
@@ -1937,14 +1972,14 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/templates') {
       const data = await parseRequestBody(req);
-      const template = await createUserTemplate(data);
+      const template = await createUserTemplate({ ...data, userId: req.auth.userId });
       sendJson(res, 200, { success: true, template });
       return;
     }
 
     if (req.method === 'GET' && pathname === '/api/admin/settings') {
       const settings = await getAppSettings();
-      sendJson(res, 200, { success: true, settings });
+      sendJson(res, 200, { success: true, settings: { ...settings, apiKey: '', apiConfigured: !!settings.apiKey } });
       return;
     }
 
@@ -1999,7 +2034,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && pathname === '/api/user/update') {
-      const { userId, username, realName } = await parseRequestBody(req);
+      const { username, realName } = await parseRequestBody(req);
+      const userId = req.auth.userId;
       if (!userId || !username) {
         sendJson(res, 400, { error: '参数不完整' });
         return;
@@ -2030,7 +2066,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && (pathname === '/api/admin/points' || pathname === '/api/admin/settings')) {
       const data = await parseRequestBody(req);
       const apiEndpoint = (data.apiEndpoint || '').trim();
-      const apiKey = (data.apiKey || '').trim();
+      const previous = await getAppSettings();
+      const apiKey = data.clearApiKey ? '' : ((data.apiKey || '').trim() || previous.apiKey);
       const model = (data.model || DEFAULT_APP_SETTINGS.model).trim();
       const apiEnabled = data.apiEnabled === true;
 
@@ -2046,7 +2083,7 @@ const server = http.createServer(async (req, res) => {
         apiEnabled: apiEnabled && !!apiKey,
       });
 
-      sendJson(res, 200, { success: true, settings });
+      sendJson(res, 200, { success: true, settings: { ...settings, apiKey: '', apiConfigured: !!settings.apiKey } });
       return;
     }
 
@@ -2089,7 +2126,10 @@ const server = http.createServer(async (req, res) => {
       filePath = path.join(__dirname, decodeURIComponent(pathname));
     }
 
-    if (!filePath.startsWith(__dirname)) {
+    const relative = path.relative(__dirname, filePath);
+    const allowed = relative === 'index.html' ||
+      (/^(图标素材|user_templates)[\\/]/.test(relative) && /\.(png|jpe?g|webp|gif|ico|lottie)$/i.test(relative));
+    if (relative.startsWith('..') || path.isAbsolute(relative) || !allowed) {
       res.writeHead(403);
       res.end('禁止访问');
       return;

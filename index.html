@@ -893,9 +893,6 @@ body {
       <label style="font-size:12px;color:var(--text-dim);">模型</label>
       <input type="text" id="modelSelect" class="form-input" value="gpt-image-2">
       
-      <!-- Change admin password -->
-      <label style="font-size:12px;color:var(--text-dim);margin-top:12px;display:block;">修改管理员密码</label>
-      <input type="password" id="newPasswordInput" class="form-input" placeholder="新密码（留空则不修改）">
 
       <div style="display:flex;gap:8px;margin-top:16px;">
         <button class="btn btn-primary" style="flex:1;" onclick="saveAdminSettings()">💾 保存设置</button>
@@ -1373,6 +1370,8 @@ function mockRecharge() {
   document.getElementById('rechargeOverlay').classList.remove('hidden');
 }
 function logout() {
+  fetch('/api/logout', { method: 'POST' });
+  STATE.adminAuthenticated = false;
   currentUser = null;
   localStorage.removeItem('cyberforge_user');
   updateUserUI();
@@ -1509,7 +1508,6 @@ function adminDeleteUser(userId, username) {
 
 // ===================== DEFAULTS =====================
 const DEFAULTS = {
-  adminPassword: 'xxxb520',
   apiEndpoint: 'https://api.openai-hk.com/v1/images/generations',
   model: 'gpt-image-2',
   apiEnabled: false,
@@ -1733,8 +1731,7 @@ function closeImageModal() {
 
 function loadSettings() {
   try {
-    const saved = JSON.parse(localStorage.getItem('cyberforge_admin') || '{}');
-    if (saved.adminPassword) DEFAULTS.adminPassword = saved.adminPassword;
+    localStorage.removeItem('cyberforge_admin');
   } catch(e) { /* ignore */ }
 
   fetch('/api/settings/public?t=' + Date.now())
@@ -1759,10 +1756,7 @@ function loadSettings() {
 }
 
 function saveSettingsToStorage() {
-  const settings = {
-    adminPassword: DEFAULTS.adminPassword
-  };
-  localStorage.setItem('cyberforge_admin', JSON.stringify(settings));
+  localStorage.removeItem('cyberforge_admin');
 }
 
 // ===================== STATUS INDICATOR =====================
@@ -2249,9 +2243,16 @@ function closeAdmin() {
   STATE.adminAuthenticated = false;
 }
 
-function adminLogin() {
+async function adminLogin() {
   const input = document.getElementById('adminPasswordInput').value;
-  if (input === DEFAULTS.adminPassword) {
+  try {
+    const response = await fetch('/api/admin/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: input })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || '登录失败');
+    document.getElementById('adminPasswordInput').value = '';
     STATE.adminAuthenticated = true;
     
     document.getElementById('adminPasswordGate').classList.add('hidden');
@@ -2263,9 +2264,9 @@ function adminLogin() {
     document.getElementById('adminLoginError').style.display = 'none';
     loadAdminSettingsPanel();
     activateAdminUserSession();
-  } else {
+  } catch (error) {
     document.getElementById('adminLoginError').style.display = 'block';
-    document.getElementById('adminLoginError').textContent = '拒绝访问 — 密码错误';
+    document.getElementById('adminLoginError').textContent = error.message || '登录失败，请重试';
   }
 }
 
@@ -2294,7 +2295,6 @@ function saveAdminSettings() {
   const endpoint = document.getElementById('apiEndpoint').value.trim();
   const apiKey = document.getElementById('apiKeyInput').value.trim();
   const model = document.getElementById('modelSelect').value.trim();
-  const newPassword = document.getElementById('newPasswordInput').value.trim();
 
   if (!endpoint) {
     showToast('API接口地址不能为空', 'error');
@@ -2303,20 +2303,12 @@ function saveAdminSettings() {
 
   DEFAULTS.apiEndpoint = endpoint;
   DEFAULTS.model = model;
-  DEFAULTS.apiConfigured = !!apiKey;
+  DEFAULTS.apiConfigured = !!apiKey || DEFAULTS.apiConfigured;
 
   // 填了API密钥就自动开启开关
   if (apiKey) {
     DEFAULTS.apiEnabled = true;
     document.getElementById('apiEnabledToggle').checked = true;
-  } else {
-    DEFAULTS.apiEnabled = false;
-    document.getElementById('apiEnabledToggle').checked = false;
-  }
-
-  if (newPassword) {
-    DEFAULTS.adminPassword = newPassword;
-    document.getElementById('newPasswordInput').value = '';
   }
 
   saveSettingsToStorage();
@@ -2338,7 +2330,7 @@ function saveAdminSettings() {
       DEFAULTS.apiEndpoint = data.settings.apiEndpoint || DEFAULTS.apiEndpoint;
       DEFAULTS.model = data.settings.model || DEFAULTS.model;
       DEFAULTS.apiEnabled = data.settings.apiEnabled === true;
-      DEFAULTS.apiConfigured = !!data.settings.apiKey;
+      DEFAULTS.apiConfigured = data.settings.apiConfigured === true;
       document.getElementById('apiEnabledToggle').checked = DEFAULTS.apiEnabled;
       document.getElementById('apiKeyInput').value = '';
       updateStatusIndicator();
@@ -2354,8 +2346,7 @@ function clearAllSettings() {
     return;
   }
 
-  openConfirmModal('确认清空所有设置（包括API密钥和密码）？', () => {
-    DEFAULTS.adminPassword = 'xxxb520';
+  openConfirmModal('确认清空API设置？', () => {
     saveSettingsToStorage();
     fetch('/api/admin/settings', {
       method: 'POST',
@@ -2363,6 +2354,7 @@ function clearAllSettings() {
       body: JSON.stringify({
         apiEndpoint: 'https://api.openai-hk.com/v1/images/generations',
         apiKey: '',
+        clearApiKey: true,
         model: 'gpt-image-2',
         apiEnabled: false
       })
@@ -2375,7 +2367,7 @@ function clearAllSettings() {
         DEFAULTS.apiEndpoint = data.settings.apiEndpoint;
         DEFAULTS.model = data.settings.model;
         DEFAULTS.apiEnabled = data.settings.apiEnabled === true;
-        DEFAULTS.apiConfigured = !!data.settings.apiKey;
+        DEFAULTS.apiConfigured = data.settings.apiConfigured === true;
         document.getElementById('apiEndpoint').value = DEFAULTS.apiEndpoint;
         document.getElementById('apiKeyInput').value = '';
         document.getElementById('modelSelect').value = DEFAULTS.model;
@@ -2394,9 +2386,10 @@ function loadAdminSettingsPanel() {
       DEFAULTS.apiEndpoint = data.settings.apiEndpoint || DEFAULTS.apiEndpoint;
       DEFAULTS.model = data.settings.model || DEFAULTS.model;
       DEFAULTS.apiEnabled = data.settings.apiEnabled === true;
-      DEFAULTS.apiConfigured = !!data.settings.apiKey;
+      DEFAULTS.apiConfigured = data.settings.apiConfigured === true;
       document.getElementById('apiEndpoint').value = DEFAULTS.apiEndpoint;
       document.getElementById('apiKeyInput').value = data.settings.apiKey || '';
+      document.getElementById('apiKeyInput').placeholder = DEFAULTS.apiConfigured ? '已配置密钥，留空保持不变' : '填写API密钥';
       document.getElementById('modelSelect').value = DEFAULTS.model;
       document.getElementById('apiEnabledToggle').checked = DEFAULTS.apiEnabled;
       updateStatusIndicator();

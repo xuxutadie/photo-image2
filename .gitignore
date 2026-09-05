@@ -1,4 +1,6 @@
 node_modules/
+deployment-private*
+user_templates/
 __pycache__/
 *.pyc
 app.db
