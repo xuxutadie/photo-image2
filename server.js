@@ -2128,6 +2128,7 @@ const server = http.createServer(async (req, res) => {
 
     const relative = path.relative(__dirname, filePath);
     const allowed = relative === 'index.html' ||
+      relative === 'cef54c2e62cecfd4e0ef93a32d63e52e.txt' ||
       (/^(图标素材|user_templates)[\\/]/.test(relative) && /\.(png|jpe?g|webp|gif|ico|lottie)$/i.test(relative));
     if (relative.startsWith('..') || path.isAbsolute(relative) || !allowed) {
       res.writeHead(403);
