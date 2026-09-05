@@ -1,5 +1,5 @@
 /**
- * CYBER FORGE - MySQL 正式商用版后端
+ * 智影魔图 - MySQL 正式商用版后端
  * 使用方法:
  * 1. 启动 MySQL 服务
  * 2. 可通过环境变量配置连接信息
@@ -12,6 +12,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const crypto = require('crypto');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
@@ -19,16 +20,30 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 const LEGACY_USERS_FILE = path.join(__dirname, 'users.json');
 const LEGACY_IP_FILE = path.join(__dirname, 'ip_records.json');
 const JSON_SETTINGS_FILE = path.join(__dirname, 'app_settings.json');
-const QUALITY_COSTS = { '1k': 58, '2k': 98, '4k': 128 };
+const JSON_TEMPLATES_FILE = path.join(__dirname, 'user_templates.json');
+const TEMPLATE_UPLOAD_DIR = path.join(__dirname, 'user_templates');
+const FIXED_IMAGE_QUALITY = '1k';
+const FREE_TRIAL_QUOTA = 10;
+const MONTHLY_MEMBER_QUOTA = 200;
+const MONTHLY_MEMBER_PRICE = 19.9;
+const MEMBERSHIP_DURATION_DAYS = 30;
+const LEGACY_POINTS_PER_GENERATION = 58;
+const STARTER_POINTS = FREE_TRIAL_QUOTA;
+const IP_REGISTER_LIMIT_PER_DAY = 5;
+const DEVICE_FREE_CLAIM_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const ADMIN_USER_ID = 'admin_owner';
+const ADMIN_USERNAME = '平台管理员';
 const BCRYPT_ROUNDS = 10;
 const GENERATION_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+const UPSTREAM_REQUEST_TIMEOUT_MS = 3 * 60 * 1000;
 const DEFAULT_APP_SETTINGS = {
   apiEndpoint: 'https://api.openai-hk.com/v1/images/generations',
   apiKey: '',
   model: 'gpt-image-2',
   apiEnabled: false,
-  timerEnd: null,
 };
+const WX_APP_ID = process.env.WX_APP_ID || 'wxe63d466a644acc73';
+const WX_APP_SECRET = process.env.WX_APP_SECRET || '';
 
 const MYSQL_CONFIG = {
   host: process.env.MYSQL_HOST || '127.0.0.1',
@@ -44,6 +59,7 @@ let useJsonStore = false;
 let jsonUsers = {};
 let jsonIpRegistrations = {};
 let jsonAppSettings = {};
+let jsonTemplates = [];
 const generationJobs = new Map();
 
 async function query(sql, params = []) {
@@ -73,6 +89,68 @@ function writeJsonFile(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
+function toSafeInt(value, fallback = 0) {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampQuota(value, max = Number.MAX_SAFE_INTEGER) {
+  return Math.max(0, Math.min(max, toSafeInt(value, 0)));
+}
+
+function legacyPointsToQuota(points) {
+  const legacyPoints = toSafeInt(points, 0);
+  if (legacyPoints <= 0) return 0;
+  return Math.min(FREE_TRIAL_QUOTA, Math.ceil(legacyPoints / LEGACY_POINTS_PER_GENERATION));
+}
+
+function getQuotaPeriod() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isActiveMonthlyMember(row) {
+  const membershipType = row?.membership_type || row?.membershipType || 'free';
+  const membershipExpiresAt = toSafeInt(row?.membership_expires_at || row?.membershipExpiresAt || 0, 0);
+  return membershipType === 'monthly' && membershipExpiresAt > Date.now();
+}
+
+function getFreeQuotaRemaining(row) {
+  if (Object.prototype.hasOwnProperty.call(row || {}, 'free_quota_remaining')) {
+    return clampQuota(row.free_quota_remaining, MONTHLY_MEMBER_QUOTA);
+  }
+  if (Object.prototype.hasOwnProperty.call(row || {}, 'freeQuotaRemaining')) {
+    return clampQuota(row.freeQuotaRemaining, MONTHLY_MEMBER_QUOTA);
+  }
+  return legacyPointsToQuota(row?.points);
+}
+
+function getMonthlyQuotaUsed(row) {
+  return clampQuota(row?.monthly_quota_used || row?.monthlyQuotaUsed || 0, MONTHLY_MEMBER_QUOTA);
+}
+
+function buildQuotaSummary(row) {
+  const isMember = isActiveMonthlyMember(row);
+  const freeQuotaRemaining = getFreeQuotaRemaining(row);
+  const monthlyQuotaUsed = getMonthlyQuotaUsed(row);
+  const monthlyQuotaRemaining = isMember ? Math.max(0, MONTHLY_MEMBER_QUOTA - monthlyQuotaUsed) : 0;
+  return {
+    isMember,
+    freeQuotaRemaining,
+    monthlyQuotaUsed,
+    monthlyQuotaLimit: MONTHLY_MEMBER_QUOTA,
+    monthlyQuotaRemaining,
+    quotaRemaining: isMember ? monthlyQuotaRemaining : freeQuotaRemaining,
+    membershipPrice: MONTHLY_MEMBER_PRICE,
+  };
+}
+
+function hashDeviceFingerprint(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
 async function loadJsonStore() {
   const rawUsers = readJsonFile(LEGACY_USERS_FILE, {});
   const normalizedUsers = {};
@@ -91,7 +169,13 @@ async function loadJsonStore() {
       username: user.username,
       real_name: user.real_name || user.realName || null,
       password_hash: passwordHash,
-      points: parseInt(user.points || 0, 10),
+      points: toSafeInt(user.points || 0, 10),
+      free_quota_remaining: getFreeQuotaRemaining(user),
+      monthly_quota_used: getMonthlyQuotaUsed(user),
+      quota_period: user.quota_period || user.quotaPeriod || getQuotaPeriod(),
+      device_fingerprint: user.device_fingerprint || user.deviceFingerprint || null,
+      membership_type: user.membership_type || user.membershipType || 'free',
+      membership_expires_at: toSafeInt(user.membership_expires_at || user.membershipExpiresAt || 0, 10),
       registered_at: registeredAt,
       register_ip: user.register_ip || user.registerIp || null,
       open_id: user.open_id || user.openId || null,
@@ -103,6 +187,10 @@ async function loadJsonStore() {
   jsonUsers = normalizedUsers;
   jsonIpRegistrations = readJsonFile(LEGACY_IP_FILE, {});
   jsonAppSettings = readJsonFile(JSON_SETTINGS_FILE, {});
+  jsonTemplates = readJsonFile(JSON_TEMPLATES_FILE, []);
+  if (!Array.isArray(jsonTemplates)) {
+    jsonTemplates = [];
+  }
 }
 
 function persistJsonUsers() {
@@ -117,7 +205,13 @@ function persistJsonSettings() {
   writeJsonFile(JSON_SETTINGS_FILE, jsonAppSettings);
 }
 
+function persistJsonTemplates() {
+  writeJsonFile(JSON_TEMPLATES_FILE, jsonTemplates);
+}
+
 async function initDatabase() {
+  fs.mkdirSync(TEMPLATE_UPLOAD_DIR, { recursive: true });
+
   try {
     const bootstrap = await mysql.createConnection({
       host: MYSQL_CONFIG.host,
@@ -152,20 +246,77 @@ async function initDatabase() {
         real_name VARCHAR(255) NULL,
         password_hash VARCHAR(255) NULL,
         points INT NOT NULL DEFAULT 0,
+        free_quota_remaining INT NOT NULL DEFAULT 10,
+        monthly_quota_used INT NOT NULL DEFAULT 0,
+        quota_period VARCHAR(16) NULL,
+        device_fingerprint VARCHAR(128) NULL,
+        membership_type VARCHAR(32) NOT NULL DEFAULT 'free',
+        membership_expires_at BIGINT NOT NULL DEFAULT 0,
         registered_at BIGINT NOT NULL,
         register_ip VARCHAR(64) NULL,
         open_id VARCHAR(255) NULL,
+        parent_id VARCHAR(64) NULL,
+        grand_parent_id VARCHAR(64) NULL,
+        referral_count INT NOT NULL DEFAULT 0,
+        commission_points INT NOT NULL DEFAULT 0,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
         INDEX idx_users_registered_at (registered_at),
-        INDEX idx_users_register_ip (register_ip)
+        INDEX idx_users_register_ip (register_ip),
+        INDEX idx_users_device_fingerprint (device_fingerprint)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+
+    const userColumnMigrations = [
+      `ALTER TABLE users ADD COLUMN free_quota_remaining INT NOT NULL DEFAULT 10`,
+      `ALTER TABLE users ADD COLUMN monthly_quota_used INT NOT NULL DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN quota_period VARCHAR(16) NULL`,
+      `ALTER TABLE users ADD COLUMN device_fingerprint VARCHAR(128) NULL`,
+      `ALTER TABLE users ADD COLUMN membership_type VARCHAR(32) NOT NULL DEFAULT 'free'`,
+      `ALTER TABLE users ADD COLUMN membership_expires_at BIGINT NOT NULL DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN parent_id VARCHAR(64) NULL`,
+      `ALTER TABLE users ADD COLUMN grand_parent_id VARCHAR(64) NULL`,
+      `ALTER TABLE users ADD COLUMN referral_count INT NOT NULL DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN commission_points INT NOT NULL DEFAULT 0`,
+    ];
+
+    for (const sql of userColumnMigrations) {
+      try {
+        await query(sql);
+      } catch (error) {
+        if (!String(error.message || '').includes('Duplicate column')) throw error;
+      }
+    }
 
     await query(`
       CREATE TABLE IF NOT EXISTS ip_registrations (
         ip VARCHAR(64) PRIMARY KEY,
-        last_registered_at BIGINT NOT NULL
+        last_registered_at BIGINT NOT NULL,
+        register_count INT NOT NULL DEFAULT 1,
+        window_start_at BIGINT NOT NULL DEFAULT 0
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    const ipColumnMigrations = [
+      `ALTER TABLE ip_registrations ADD COLUMN register_count INT NOT NULL DEFAULT 1`,
+      `ALTER TABLE ip_registrations ADD COLUMN window_start_at BIGINT NOT NULL DEFAULT 0`,
+    ];
+
+    for (const sql of ipColumnMigrations) {
+      try {
+        await query(sql);
+      } catch (error) {
+        if (!String(error.message || '').includes('Duplicate column')) throw error;
+      }
+    }
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS device_registrations (
+        device_fingerprint VARCHAR(128) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        registered_at BIGINT NOT NULL,
+        last_ip VARCHAR(64) NULL,
+        INDEX idx_device_registrations_registered_at (registered_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
 
@@ -185,10 +336,42 @@ async function initDatabase() {
     `);
 
     await query(`
+      CREATE TABLE IF NOT EXISTS generation_logs (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id VARCHAR(64) NOT NULL,
+        quota_type VARCHAR(32) NOT NULL,
+        quality VARCHAR(16) NOT NULL,
+        job_type VARCHAR(32) NOT NULL,
+        note VARCHAR(255) NULL,
+        created_at BIGINT NOT NULL,
+        INDEX idx_generation_logs_user_id (user_id),
+        INDEX idx_generation_logs_created_at (created_at),
+        CONSTRAINT fk_generation_logs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    await query(`
       CREATE TABLE IF NOT EXISTS app_settings (
         setting_key VARCHAR(64) PRIMARY KEY,
         setting_value TEXT NULL,
         updated_at BIGINT NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS user_templates (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description VARCHAR(255) NULL,
+        category VARCHAR(64) NOT NULL,
+        prompt TEXT NULL,
+        image_url TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_user_templates_category (category),
+        INDEX idx_user_templates_user_id (user_id),
+        INDEX idx_user_templates_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
 
@@ -268,8 +451,8 @@ async function migrateLegacyData() {
 
     await query(
       `INSERT INTO users
-       (id, username, real_name, password_hash, points, registered_at, register_ip, open_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, username, real_name, password_hash, points, free_quota_remaining, monthly_quota_used, quota_period, membership_type, membership_expires_at, registered_at, register_ip, open_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE username = VALUES(username)`,
       [
         user.id,
@@ -277,6 +460,11 @@ async function migrateLegacyData() {
         user.realName || null,
         passwordHash,
         parseInt(user.points || 0, 10),
+        getFreeQuotaRemaining(user),
+        getMonthlyQuotaUsed(user),
+        user.quota_period || user.quotaPeriod || getQuotaPeriod(),
+        user.membershipType || user.membership_type || 'free',
+        parseInt(user.membershipExpiresAt || user.membership_expires_at || 0, 10),
         createdAt,
         user.registerIp || null,
         user.openId || null,
@@ -287,11 +475,20 @@ async function migrateLegacyData() {
   }
 
   for (const [ip, timestamp] of Object.entries(legacyIpRecords)) {
+    const normalizedRecord = typeof timestamp === 'object' && timestamp !== null
+      ? timestamp
+      : { last_registered_at: timestamp };
+    const lastRegisteredAt = parseInt(normalizedRecord.last_registered_at || normalizedRecord.lastRegisteredAt || timestamp || 0, 10);
     await query(
-      `INSERT INTO ip_registrations (ip, last_registered_at)
-       VALUES (?, ?)
+      `INSERT INTO ip_registrations (ip, last_registered_at, register_count, window_start_at)
+       VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE last_registered_at = VALUES(last_registered_at)`,
-      [ip, parseInt(timestamp || 0, 10)]
+      [
+        ip,
+        lastRegisteredAt,
+        toSafeInt(normalizedRecord.register_count || normalizedRecord.registerCount || 1, 1),
+        toSafeInt(normalizedRecord.window_start_at || normalizedRecord.windowStartAt || lastRegisteredAt, lastRegisteredAt),
+      ]
     );
   }
 
@@ -300,36 +497,181 @@ async function migrateLegacyData() {
 
 function normalizeUser(row) {
   if (!row) return null;
+  const membershipExpiresAt = toSafeInt(row.membership_expires_at || row.membershipExpiresAt || 0, 0);
+  const membershipType = row.membership_type || row.membershipType || 'free';
+  const quota = buildQuotaSummary(row);
   return {
     id: row.id,
     username: row.username,
     realName: row.real_name,
-    points: row.points,
+    // 保留 points 字段给旧前端兜底，新界面统一使用 quotaRemaining。
+    points: quota.quotaRemaining,
+    freeQuotaRemaining: quota.freeQuotaRemaining,
+    monthlyQuotaUsed: quota.monthlyQuotaUsed,
+    monthlyQuotaLimit: quota.monthlyQuotaLimit,
+    monthlyQuotaRemaining: quota.monthlyQuotaRemaining,
+    quotaRemaining: quota.quotaRemaining,
+    membershipPrice: quota.membershipPrice,
+    membershipType,
+    membershipExpiresAt,
+    isMember: quota.isMember,
     registeredAt: row.registered_at,
     registerIp: row.register_ip,
     openId: row.open_id,
   };
 }
 
+function normalizeTemplate(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id || row.userId,
+    title: row.title,
+    desc: row.description || row.desc || '',
+    category: row.category,
+    prompt: row.prompt || '',
+    image: row.image_url || row.image || '',
+    createdAt: row.created_at || row.createdAt,
+  };
+}
+
+function sanitizeTemplateCategory(category) {
+  const value = String(category || '').trim();
+  const allowed = new Set([
+    'poster',
+    'ecommerce',
+    'game',
+    'brand',
+    'profile',
+    'student',
+    'idphoto',
+    'parent',
+    'teacher',
+    'ads',
+    'interior',
+    'renovation',
+    'restoration',
+    'knowledge',
+    'media',
+  ]);
+  return allowed.has(value) ? value : '';
+}
+
+function saveTemplateImage(imageData) {
+  if (!imageData) return '';
+
+  const text = String(imageData);
+  const match = text.match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
+  const ext = match
+    ? (match[1].toLowerCase().startsWith('jp') ? 'jpg' : match[1].toLowerCase())
+    : 'png';
+  const base64 = match ? match[2] : text;
+  const buffer = Buffer.from(base64, 'base64');
+
+  if (!buffer.length || buffer.length > 12 * 1024 * 1024) {
+    const err = new Error('模板图片无效或超过 12MB');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  fs.mkdirSync(TEMPLATE_UPLOAD_DIR, { recursive: true });
+  const filename = `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  fs.writeFileSync(path.join(TEMPLATE_UPLOAD_DIR, filename), buffer);
+  return `/user_templates/${filename}`;
+}
+
+async function listUserTemplates(category) {
+  const normalizedCategory = sanitizeTemplateCategory(category);
+  if (useJsonStore) {
+    return jsonTemplates
+      .filter((item) => !normalizedCategory || item.category === normalizedCategory)
+      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+      .map(normalizeTemplate);
+  }
+
+  const rows = normalizedCategory
+    ? await query('SELECT * FROM user_templates WHERE category = ? ORDER BY created_at DESC', [normalizedCategory])
+    : await query('SELECT * FROM user_templates ORDER BY created_at DESC');
+  return rows.map(normalizeTemplate);
+}
+
+async function createUserTemplate(data) {
+  const userId = String(data.userId || '').trim();
+  const user = userId ? await getUserById(userId) : null;
+  if (!user) {
+    const err = new Error('请先登录后再上传模板');
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const category = sanitizeTemplateCategory(data.category);
+  if (!category) {
+    const err = new Error('上传模板必须选择分类');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const title = String(data.title || '').trim();
+  if (!title) {
+    const err = new Error('请填写模板名称');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const prompt = String(data.prompt || '').trim();
+  const description = String(data.desc || data.description || '').trim();
+  const imageUrl = String(data.imageUrl || '').trim() || saveTemplateImage(data.imageData);
+  if (!imageUrl) {
+    const err = new Error('请提供模板图片');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const now = Date.now();
+  const template = {
+    id: `tpl_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    user_id: userId,
+    title,
+    description,
+    category,
+    prompt,
+    image_url: imageUrl,
+    created_at: now,
+    updated_at: now,
+  };
+
+  if (useJsonStore) {
+    jsonTemplates.push(template);
+    persistJsonTemplates();
+    return normalizeTemplate(template);
+  }
+
+  await query(
+    `INSERT INTO user_templates
+     (id, user_id, title, description, category, prompt, image_url, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      template.id,
+      template.user_id,
+      template.title,
+      template.description,
+      template.category,
+      template.prompt,
+      template.image_url,
+      template.created_at,
+      template.updated_at,
+    ]
+  );
+  return normalizeTemplate(template);
+}
+
 async function getAppSettings() {
   if (useJsonStore) {
-    let apiEnabled = jsonAppSettings.api_enabled === '1';
-    let timerEnd = jsonAppSettings.timer_end || null;
-
-    if (timerEnd && new Date(timerEnd) <= new Date()) {
-      apiEnabled = false;
-      timerEnd = null;
-      jsonAppSettings.api_enabled = '0';
-      jsonAppSettings.timer_end = '';
-      persistJsonSettings();
-    }
-
     return {
       apiEndpoint: jsonAppSettings.api_endpoint || DEFAULT_APP_SETTINGS.apiEndpoint,
       apiKey: jsonAppSettings.api_key || DEFAULT_APP_SETTINGS.apiKey,
       model: jsonAppSettings.model || DEFAULT_APP_SETTINGS.model,
-      apiEnabled,
-      timerEnd,
+      apiEnabled: jsonAppSettings.api_enabled === '1',
     };
   }
 
@@ -338,31 +680,11 @@ async function getAppSettings() {
   for (const row of rows) {
     map[row.setting_key] = row.setting_value;
   }
-  let apiEnabled = map.api_enabled === '1';
-  let timerEnd = map.timer_end || null;
-
-  if (timerEnd && new Date(timerEnd) <= new Date()) {
-    apiEnabled = false;
-    timerEnd = null;
-    await query(
-      `UPDATE app_settings
-       SET setting_value = CASE
-         WHEN setting_key = 'api_enabled' THEN '0'
-         WHEN setting_key = 'timer_end' THEN ''
-         ELSE setting_value
-       END,
-       updated_at = ?
-       WHERE setting_key IN ('api_enabled', 'timer_end')`,
-      [Date.now()]
-    );
-  }
-
   return {
     apiEndpoint: map.api_endpoint || DEFAULT_APP_SETTINGS.apiEndpoint,
     apiKey: map.api_key || DEFAULT_APP_SETTINGS.apiKey,
     model: map.model || DEFAULT_APP_SETTINGS.model,
-    apiEnabled,
-    timerEnd,
+    apiEnabled: map.api_enabled === '1',
   };
 }
 
@@ -372,7 +694,8 @@ async function saveAppSettings(nextSettings) {
     jsonAppSettings.api_key = nextSettings.apiKey || '';
     jsonAppSettings.model = nextSettings.model || DEFAULT_APP_SETTINGS.model;
     jsonAppSettings.api_enabled = nextSettings.apiEnabled ? '1' : '0';
-    jsonAppSettings.timer_end = nextSettings.timerEnd || '';
+    // 清除历史定时值，后台不再提供定时关闭功能。
+    jsonAppSettings.timer_end = '';
     persistJsonSettings();
     return getAppSettings();
   }
@@ -383,7 +706,7 @@ async function saveAppSettings(nextSettings) {
     api_key: nextSettings.apiKey || '',
     model: nextSettings.model || DEFAULT_APP_SETTINGS.model,
     api_enabled: nextSettings.apiEnabled ? '1' : '0',
-    timer_end: nextSettings.timerEnd || '',
+    timer_end: '',
   };
 
   for (const [key, value] of Object.entries(entries)) {
@@ -412,22 +735,340 @@ async function getUserByUsername(username) {
   return getOne('SELECT * FROM users WHERE username = ?', [username]);
 }
 
-async function updateUserPoints(userId, delta, action, note) {
+async function getUserByOpenId(openId) {
+  if (!openId) return null;
   if (useJsonStore) {
-    const user = jsonUsers[userId];
-    if (!user) {
-      return null;
+    return Object.values(jsonUsers).find((user) => user.open_id === openId || user.openId === openId) || null;
+  }
+  return getOne('SELECT * FROM users WHERE open_id = ?', [openId]);
+}
+
+async function ensureAdminUser() {
+  const now = Date.now();
+  const expiresAt = now + MEMBERSHIP_DURATION_DAYS * 24 * 60 * 60 * 1000;
+
+  if (useJsonStore) {
+    const existing = jsonUsers[ADMIN_USER_ID];
+    jsonUsers[ADMIN_USER_ID] = {
+      ...(existing || {}),
+      id: ADMIN_USER_ID,
+      username: ADMIN_USERNAME,
+      real_name: ADMIN_USERNAME,
+      password_hash: null,
+      points: FREE_TRIAL_QUOTA,
+      free_quota_remaining: FREE_TRIAL_QUOTA,
+      monthly_quota_used: 0,
+      quota_period: getQuotaPeriod(),
+      membership_type: 'monthly',
+      membership_expires_at: expiresAt,
+      registered_at: existing?.registered_at || now,
+      register_ip: existing?.register_ip || 'admin',
+      open_id: null,
+      created_at: existing?.created_at || now,
+      updated_at: now,
+    };
+    persistJsonUsers();
+    return jsonUsers[ADMIN_USER_ID];
+  }
+
+  const existing = await getUserById(ADMIN_USER_ID);
+  if (existing) {
+    await query(
+      `UPDATE users
+       SET username = ?, real_name = ?, membership_type = 'monthly', membership_expires_at = ?, monthly_quota_used = 0, quota_period = ?, updated_at = ?
+       WHERE id = ?`,
+      [ADMIN_USERNAME, ADMIN_USERNAME, expiresAt, getQuotaPeriod(), now, ADMIN_USER_ID]
+    );
+    return getUserById(ADMIN_USER_ID);
+  }
+
+  const sameNameUser = await getUserByUsername(ADMIN_USERNAME);
+  const adminUsername = sameNameUser ? `${ADMIN_USERNAME}_${ADMIN_USER_ID}` : ADMIN_USERNAME;
+  await query(
+    `INSERT INTO users
+     (id, username, real_name, password_hash, points, free_quota_remaining, monthly_quota_used, quota_period, device_fingerprint, membership_type, membership_expires_at, registered_at, register_ip, open_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      ADMIN_USER_ID,
+      adminUsername,
+      ADMIN_USERNAME,
+      null,
+      FREE_TRIAL_QUOTA,
+      FREE_TRIAL_QUOTA,
+      0,
+      getQuotaPeriod(),
+      null,
+      'monthly',
+      expiresAt,
+      now,
+      'admin',
+      null,
+      now,
+      now,
+    ]
+  );
+  return getUserById(ADMIN_USER_ID);
+}
+
+function normalizeIpRegistrationRecord(record) {
+  if (record && typeof record === 'object') {
+    const lastRegisteredAt = toSafeInt(record.last_registered_at || record.lastRegisteredAt || 0, 0);
+    return {
+      lastRegisteredAt,
+      registerCount: toSafeInt(record.register_count || record.registerCount || 0, 0),
+      windowStartAt: toSafeInt(record.window_start_at || record.windowStartAt || lastRegisteredAt, lastRegisteredAt),
+    };
+  }
+
+  const lastRegisteredAt = toSafeInt(record || 0, 0);
+  return {
+    lastRegisteredAt,
+    registerCount: lastRegisteredAt ? 1 : 0,
+    windowStartAt: lastRegisteredAt,
+  };
+}
+
+async function ensureRegistrationAllowed(clientIp, deviceFingerprint) {
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+
+  if (useJsonStore) {
+    const ipRecord = normalizeIpRegistrationRecord(jsonIpRegistrations[clientIp]);
+    if (ipRecord.windowStartAt && now - ipRecord.windowStartAt < oneDay && ipRecord.registerCount >= IP_REGISTER_LIMIT_PER_DAY) {
+      return { ok: false, status: 429, message: '当前网络注册过于频繁，请明天再试或联系管理员开通账号' };
     }
 
-    const nextPoints = user.points + delta;
-    if (nextPoints < 0) {
-      return null;
+    if (deviceFingerprint) {
+      const deviceRecord = jsonIpRegistrations[`device:${deviceFingerprint}`];
+      const registeredAt = toSafeInt(deviceRecord?.registered_at || deviceRecord?.registeredAt || 0, 0);
+      if (registeredAt && now - registeredAt < DEVICE_FREE_CLAIM_WINDOW_MS) {
+        return { ok: false, status: 429, message: '当前设备已领取过免费体验次数，请直接登录原账号或联系管理员' };
+      }
     }
+
+    return { ok: true };
+  }
+
+  const ipRecord = await getOne('SELECT * FROM ip_registrations WHERE ip = ?', [clientIp]);
+  if (ipRecord) {
+    const windowStartAt = toSafeInt(ipRecord.window_start_at || ipRecord.last_registered_at || 0, 0);
+    const registerCount = toSafeInt(ipRecord.register_count || 0, 0);
+    if (windowStartAt && now - windowStartAt < oneDay && registerCount >= IP_REGISTER_LIMIT_PER_DAY) {
+      return { ok: false, status: 429, message: '当前网络注册过于频繁，请明天再试或联系管理员开通账号' };
+    }
+  }
+
+  if (deviceFingerprint) {
+    const deviceRecord = await getOne('SELECT * FROM device_registrations WHERE device_fingerprint = ?', [deviceFingerprint]);
+    const registeredAt = toSafeInt(deviceRecord?.registered_at || 0, 0);
+    if (registeredAt && now - registeredAt < DEVICE_FREE_CLAIM_WINDOW_MS) {
+      return { ok: false, status: 429, message: '当前设备已领取过免费体验次数，请直接登录原账号或联系管理员' };
+    }
+  }
+
+  return { ok: true };
+}
+
+async function recordRegistration(clientIp, deviceFingerprint, userId) {
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+
+  if (useJsonStore) {
+    const ipRecord = normalizeIpRegistrationRecord(jsonIpRegistrations[clientIp]);
+    const isNewWindow = !ipRecord.windowStartAt || now - ipRecord.windowStartAt >= oneDay;
+    jsonIpRegistrations[clientIp] = {
+      last_registered_at: now,
+      register_count: isNewWindow ? 1 : ipRecord.registerCount + 1,
+      window_start_at: isNewWindow ? now : ipRecord.windowStartAt,
+    };
+    if (deviceFingerprint) {
+      jsonIpRegistrations[`device:${deviceFingerprint}`] = {
+        user_id: userId,
+        registered_at: now,
+        last_ip: clientIp,
+      };
+    }
+    persistJsonIpRegistrations();
+    return;
+  }
+
+  const ipRecord = await getOne('SELECT * FROM ip_registrations WHERE ip = ?', [clientIp]);
+  const windowStartAt = toSafeInt(ipRecord?.window_start_at || ipRecord?.last_registered_at || 0, 0);
+  const isNewWindow = !windowStartAt || now - windowStartAt >= oneDay;
+  const registerCount = isNewWindow ? 1 : toSafeInt(ipRecord?.register_count || 0, 0) + 1;
+  await query(
+    `INSERT INTO ip_registrations (ip, last_registered_at, register_count, window_start_at)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE last_registered_at = VALUES(last_registered_at), register_count = VALUES(register_count), window_start_at = VALUES(window_start_at)`,
+    [clientIp, now, registerCount, isNewWindow ? now : windowStartAt]
+  );
+
+  if (deviceFingerprint) {
+    await query(
+      `INSERT INTO device_registrations (device_fingerprint, user_id, registered_at, last_ip)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), registered_at = VALUES(registered_at), last_ip = VALUES(last_ip)`,
+      [deviceFingerprint, userId, now, clientIp]
+    );
+  }
+}
+
+function wxCodeToSession(code) {
+  return new Promise((resolve, reject) => {
+    if (!WX_APP_SECRET) {
+      resolve(null);
+      return;
+    }
+
+    const target = new URL('https://api.weixin.qq.com/sns/jscode2session');
+    target.searchParams.set('appid', WX_APP_ID);
+    target.searchParams.set('secret', WX_APP_SECRET);
+    target.searchParams.set('js_code', code);
+    target.searchParams.set('grant_type', 'authorization_code');
+
+    https.get(target, (resp) => {
+      const chunks = [];
+      resp.on('data', (chunk) => chunks.push(chunk));
+      resp.on('end', () => {
+        try {
+          const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          if (data.errcode) {
+            reject(new Error(data.errmsg || `微信登录失败：${data.errcode}`));
+            return;
+          }
+          resolve(data);
+        } catch (error) {
+          reject(new Error('微信登录响应解析失败'));
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+function makeDevOpenId(devOpenId, code) {
+  const raw = devOpenId || code || `${Date.now()}_${Math.random()}`;
+  return `wx_dev_${crypto.createHash('sha1').update(String(raw)).digest('hex').slice(0, 24)}`;
+}
+
+async function loginWithWechat(params, clientIp) {
+  const code = String(params.code || '').trim();
+  if (!code) {
+    const err = new Error('缺少微信登录 code');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const session = await wxCodeToSession(code);
+  const openId = session?.openid || makeDevOpenId(params.devOpenId, code);
+  const nickname = String(params.nickname || '').trim() || `微信用户${openId.slice(-6)}`;
+  const deviceFingerprint = hashDeviceFingerprint(params.deviceFingerprint || params.clientFingerprint || '');
+  let user = await getUserByOpenId(openId);
+  let isNew = false;
+
+  if (!user) {
+    const allowResult = await ensureRegistrationAllowed(clientIp, deviceFingerprint);
+    if (!allowResult.ok) {
+      const err = new Error(allowResult.message);
+      err.statusCode = allowResult.status;
+      throw err;
+    }
+
+    const now = Date.now();
+    const newId = `wx_${now}_${Math.random().toString(36).slice(2, 8)}`;
+    let username = nickname;
+    const existing = await getUserByUsername(username);
+    if (existing) {
+      username = `${nickname}_${openId.slice(-4)}`;
+    }
+
+    // 处理推荐人逻辑
+    const inviterId = params.inviterId;
+    let parentId = null;
+    let grandParentId = null;
+    if (inviterId && inviterId !== newId) {
+      const inviter = await getUserById(inviterId);
+      if (inviter) {
+        parentId = inviter.id;
+        grandParentId = inviter.parent_id || inviter.parentId || null;
+      }
+    }
+
+    if (useJsonStore) {
+      jsonUsers[newId] = {
+        id: newId,
+        username,
+        real_name: nickname,
+        password_hash: null,
+        points: 0,
+        free_quota_remaining: FREE_TRIAL_QUOTA,
+        monthly_quota_used: 0,
+        quota_period: getQuotaPeriod(),
+        device_fingerprint: deviceFingerprint,
+        membership_type: 'free',
+        membership_expires_at: 0,
+        registered_at: now,
+        register_ip: clientIp,
+        open_id: openId,
+        parent_id: parentId,
+        grand_parent_id: grandParentId,
+        referral_count: 0,
+        commission_points: 0,
+        created_at: now,
+        updated_at: now,
+      };
+      persistJsonUsers();
+    } else {
+      await query(
+        `INSERT INTO users
+         (id, username, real_name, password_hash, points, free_quota_remaining, monthly_quota_used, quota_period, device_fingerprint, membership_type, membership_expires_at, registered_at, register_ip, open_id, parent_id, grand_parent_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newId, username, nickname, null, 0, FREE_TRIAL_QUOTA, 0, getQuotaPeriod(), deviceFingerprint, 'free', 0, now, clientIp, openId, parentId, grandParentId, now, now]
+      );
+    }
+
+    await recordRegistration(clientIp, deviceFingerprint, newId);
+
+    // 更新推荐人的邀请计数
+    if (parentId) {
+      await incrementReferralCount(parentId);
+    }
+
+    user = await getUserById(newId);
+    isNew = true;
+  }
+
+  return { user: normalizeUser(user), isNew, devMode: !WX_APP_SECRET };
+}
+
+async function incrementReferralCount(userId) {
+  if (useJsonStore) {
+    if (jsonUsers[userId]) {
+      jsonUsers[userId].referral_count = (jsonUsers[userId].referral_count || 0) + 1;
+      persistJsonUsers();
+    }
+  } else {
+    await query('UPDATE users SET referral_count = referral_count + 1 WHERE id = ?', [userId]);
+  }
+}
+
+async function updateUserPoints(userId, delta, action, note) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+
+  if (useJsonStore) {
+    const nextPoints = user.points + delta;
+    if (nextPoints < 0) return null;
 
     user.points = nextPoints;
     user.updated_at = Date.now();
     jsonUsers[userId] = user;
     persistJsonUsers();
+    
+    // 如果是充值动作，处理分销奖励
+    if (action === 'admin_recharge' && delta > 0) {
+      await processReferralCommission(userId, delta);
+    }
+    
     return { ...user };
   }
 
@@ -435,13 +1076,13 @@ async function updateUserPoints(userId, delta, action, note) {
   try {
     await conn.beginTransaction();
     const [rows] = await conn.execute('SELECT * FROM users WHERE id = ? FOR UPDATE', [userId]);
-    const user = rows[0];
-    if (!user) {
+    const u = rows[0];
+    if (!u) {
       await conn.rollback();
       return null;
     }
 
-    const nextPoints = user.points + delta;
+    const nextPoints = u.points + delta;
     if (nextPoints < 0) {
       await conn.rollback();
       return null;
@@ -457,7 +1098,221 @@ async function updateUserPoints(userId, delta, action, note) {
       [userId, delta, nextPoints, action, note || '', Date.now()]
     );
     await conn.commit();
-    return { ...user, points: nextPoints };
+
+    // 处理分销奖励
+    if (action === 'admin_recharge' && delta > 0) {
+      await processReferralCommission(userId, delta);
+    }
+
+    return { ...u, points: nextPoints };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+async function processReferralCommission(userId, rechargeAmount) {
+  const user = await getUserById(userId);
+  if (!user) return;
+
+  const parentId = user.parent_id || user.parentId;
+  const grandParentId = user.grand_parent_id || user.grandParentId;
+
+  // 一级分销：15%
+  if (parentId) {
+    const commission1 = Math.floor(rechargeAmount * 0.15);
+    if (commission1 > 0) {
+      await awardCommission(parentId, commission1, `一级分销奖励：来自用户 ${userId} 的充值`);
+    }
+  }
+
+  // 二级分销：5%
+  if (grandParentId) {
+    const commission2 = Math.floor(rechargeAmount * 0.05);
+    if (commission2 > 0) {
+      await awardCommission(grandParentId, commission2, `二级分销奖励：来自用户 ${userId} 的充值`);
+    }
+  }
+}
+
+async function awardCommission(userId, amount, note) {
+  if (useJsonStore) {
+    if (jsonUsers[userId]) {
+      jsonUsers[userId].points = (jsonUsers[userId].points || 0) + amount;
+      jsonUsers[userId].commission_points = (jsonUsers[userId].commission_points || 0) + amount;
+      jsonUsers[userId].updated_at = Date.now();
+      persistJsonUsers();
+    }
+  } else {
+    await query(
+      'UPDATE users SET points = points + ?, commission_points = commission_points + ?, updated_at = ? WHERE id = ?',
+      [amount, amount, Date.now(), userId]
+    );
+  }
+}
+
+async function updateUserMembership(userId, membershipType) {
+  const type = 'monthly';
+  const now = Date.now();
+  const membershipExpiresAt = now + MEMBERSHIP_DURATION_DAYS * 24 * 60 * 60 * 1000;
+
+  if (useJsonStore) {
+    const user = jsonUsers[userId];
+    if (!user) {
+      return null;
+    }
+    user.membership_type = type;
+    user.membership_expires_at = membershipExpiresAt;
+    user.monthly_quota_used = 0;
+    user.quota_period = getQuotaPeriod();
+    user.updated_at = now;
+    jsonUsers[userId] = user;
+    persistJsonUsers();
+    return { ...user };
+  }
+
+  const user = await getUserById(userId);
+  if (!user) {
+    return null;
+  }
+
+  await query(
+    'UPDATE users SET membership_type = ?, membership_expires_at = ?, monthly_quota_used = 0, quota_period = ?, updated_at = ? WHERE id = ?',
+    [type, membershipExpiresAt, getQuotaPeriod(), now, userId]
+  );
+  return getUserById(userId);
+}
+
+async function updateUserFreeQuota(userId, delta, action, note) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+
+  if (useJsonStore) {
+    const currentQuota = getFreeQuotaRemaining(user);
+    const nextQuota = currentQuota + delta;
+    if (nextQuota < 0) return null;
+
+    user.free_quota_remaining = nextQuota;
+    user.points = nextQuota;
+    user.updated_at = Date.now();
+    jsonUsers[userId] = user;
+    persistJsonUsers();
+    return { ...user };
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.execute('SELECT * FROM users WHERE id = ? FOR UPDATE', [userId]);
+    const u = rows[0];
+    if (!u) {
+      await conn.rollback();
+      return null;
+    }
+
+    const nextQuota = getFreeQuotaRemaining(u) + delta;
+    if (nextQuota < 0) {
+      await conn.rollback();
+      return null;
+    }
+
+    await conn.execute(
+      'UPDATE users SET free_quota_remaining = ?, points = ?, updated_at = ? WHERE id = ?',
+      [nextQuota, nextQuota, Date.now(), userId]
+    );
+    await conn.execute(
+      `INSERT INTO point_logs (user_id, change_amount, balance_after, action, note, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [userId, delta, nextQuota, action || 'quota_adjust', note || '', Date.now()]
+    );
+    await conn.commit();
+    return { ...u, free_quota_remaining: nextQuota, points: nextQuota };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+async function consumeGenerationQuota(userId, quotaType, options = {}) {
+  const now = Date.now();
+
+  if (useJsonStore) {
+    const user = jsonUsers[userId];
+    if (!user) return null;
+
+    if (quotaType === 'monthly') {
+      const quota = buildQuotaSummary(user);
+      if (!quota.isMember || quota.monthlyQuotaRemaining <= 0) return null;
+      user.monthly_quota_used = quota.monthlyQuotaUsed + 1;
+      user.quota_period = user.quota_period || getQuotaPeriod();
+    } else {
+      const freeQuotaRemaining = getFreeQuotaRemaining(user);
+      if (freeQuotaRemaining <= 0) return null;
+      user.free_quota_remaining = freeQuotaRemaining - 1;
+      user.points = user.free_quota_remaining;
+    }
+
+    user.updated_at = now;
+    jsonUsers[userId] = user;
+    persistJsonUsers();
+    return { ...user };
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.execute('SELECT * FROM users WHERE id = ? FOR UPDATE', [userId]);
+    const user = rows[0];
+    if (!user) {
+      await conn.rollback();
+      return null;
+    }
+
+    let updatedUser = null;
+    if (quotaType === 'monthly') {
+      const quota = buildQuotaSummary(user);
+      if (!quota.isMember || quota.monthlyQuotaRemaining <= 0) {
+        await conn.rollback();
+        return null;
+      }
+      const nextUsed = quota.monthlyQuotaUsed + 1;
+      await conn.execute(
+        'UPDATE users SET monthly_quota_used = ?, quota_period = ?, updated_at = ? WHERE id = ?',
+        [nextUsed, user.quota_period || getQuotaPeriod(), now, userId]
+      );
+      updatedUser = { ...user, monthly_quota_used: nextUsed };
+    } else {
+      const freeQuotaRemaining = getFreeQuotaRemaining(user);
+      if (freeQuotaRemaining <= 0) {
+        await conn.rollback();
+        return null;
+      }
+      const nextQuota = freeQuotaRemaining - 1;
+      await conn.execute(
+        'UPDATE users SET free_quota_remaining = ?, points = ?, updated_at = ? WHERE id = ?',
+        [nextQuota, nextQuota, now, userId]
+      );
+      updatedUser = { ...user, free_quota_remaining: nextQuota, points: nextQuota };
+    }
+
+    await conn.execute(
+      `INSERT INTO generation_logs (user_id, quota_type, quality, job_type, note, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        quotaType,
+        options.quality || '',
+        options.jobType || '',
+        options.note || '',
+        now,
+      ]
+    );
+    await conn.commit();
+    return updatedUser;
   } catch (error) {
     await conn.rollback();
     throw error;
@@ -504,18 +1359,34 @@ function serveFile(res, filePath) {
   });
 }
 
-async function ensureUserCanAfford(userId, quality) {
+async function ensureUserCanGenerate(userId) {
   const user = await getUserById(userId);
   if (!user) {
     return { ok: false, status: 401, body: { error: { message: '请先登录' } } };
   }
 
-  const cost = QUALITY_COSTS[quality] || QUALITY_COSTS['1k'];
-  if (user.points < cost) {
-    return { ok: false, status: 402, body: { error: { message: '积分不足，请充值' } } };
+  const normalized = normalizeUser(user);
+  if (normalized.isMember) {
+    if (normalized.monthlyQuotaRemaining <= 0) {
+      return {
+        ok: false,
+        status: 402,
+        body: { error: { message: `本月会员次数已用完，月会员最多可生成 ${MONTHLY_MEMBER_QUOTA} 次` } },
+      };
+    }
+
+    return { ok: true, user, quotaType: 'monthly' };
   }
 
-  return { ok: true, user, cost };
+  if (normalized.freeQuotaRemaining <= 0) {
+    return {
+      ok: false,
+      status: 402,
+      body: { error: { message: `免费次数已用完，请开通 ${MONTHLY_MEMBER_PRICE} 元月会员继续使用` } },
+    };
+  }
+
+  return { ok: true, user, quotaType: 'free' };
 }
 
 function createJobId() {
@@ -599,12 +1470,31 @@ function parseApiImages(rawText) {
 }
 
 function parseApiErrorMessage(rawText, statusCode) {
+  const normalizeExternalMessage = (message) => {
+    const rawMessage = String(message || '').replace(/\(request id:[^)]+\)/ig, '').trim();
+    const lower = rawMessage.toLowerCase();
+
+    if (lower.includes('key error') || lower.includes('api key') || lower.includes('unauthorized') || statusCode === 401) {
+      return '接口认证失败，请管理员检查 API 密钥是否属于当前接口平台，或检查接口地址是否填错';
+    }
+
+    if (lower.includes('quota') || lower.includes('credit') || lower.includes('balance') || lower.includes('insufficient')) {
+      return 'API账户额度不足，请管理员检查接口账户余额';
+    }
+
+    if (!rawMessage) {
+      return `生成失败，接口返回 HTTP ${statusCode}`;
+    }
+
+    return rawMessage.length > 160 ? `${rawMessage.slice(0, 160)}...` : rawMessage;
+  };
+
   try {
     const data = JSON.parse(rawText);
-    return data.error?.message || data.message || `HTTP ${statusCode}`;
+    return normalizeExternalMessage(data.error?.message || data.message || `HTTP ${statusCode}`);
   } catch (error) {
     const firstLine = rawText.split('\n').map((line) => line.trim()).find(Boolean);
-    return firstLine || `HTTP ${statusCode}`;
+    return normalizeExternalMessage(firstLine || `HTTP ${statusCode}`);
   }
 }
 
@@ -627,7 +1517,7 @@ function requestUpstream(targetUrl, headers, body, job) {
       path: targetUrl.pathname + targetUrl.search,
       method: 'POST',
       headers,
-      timeout: 3600000,
+      timeout: UPSTREAM_REQUEST_TIMEOUT_MS,
       rejectUnauthorized: false,
     };
 
@@ -698,10 +1588,14 @@ async function runGenerationJob(job) {
     }
 
     const actionLabel = job.type === 'multipart' ? `参考图生成(${job.quality})` : `普通生成(${job.quality})`;
-    const updatedUser = await updateUserPoints(job.user.id, -job.cost, 'generate', actionLabel);
+    const updatedUser = await consumeGenerationQuota(job.user.id, job.quotaType, {
+      quality: job.quality,
+      jobType: job.type,
+      note: actionLabel,
+    });
     if (!updatedUser) {
       job.status = 'failed';
-      job.errorMessage = '积分扣减失败，请检查是否有并发生成任务';
+      job.errorMessage = '次数扣减失败，请检查是否有并发生成任务';
       job.updatedAt = Date.now();
       return;
     }
@@ -713,7 +1607,8 @@ async function runGenerationJob(job) {
       images,
       user: normalizeUser(updatedUser),
     };
-    console.log(`[扣费] 用户 ${updatedUser.username} 扣除 ${job.cost} 积分，剩余 ${updatedUser.points}`);
+    const normalizedUser = normalizeUser(updatedUser);
+    console.log(`[扣次] 用户 ${updatedUser.username} 扣除 1 次，剩余 ${normalizedUser.quotaRemaining}`);
   } catch (error) {
     if (job.cancelRequested || error.message === 'GENERATION_CANCELLED') {
       job.status = 'cancelled';
@@ -722,8 +1617,8 @@ async function runGenerationJob(job) {
     }
 
     job.status = 'failed';
-    job.errorMessage = error.message === 'UPSTREAM_TIMEOUT'
-      ? 'API请求超时（超过60分钟），可能模型拥堵，请稍后重试'
+      job.errorMessage = error.message === 'UPSTREAM_TIMEOUT'
+      ? 'API请求超时（超过3分钟），请先尝试1K清晰度，或稍后重试'
       : `代理请求失败: ${error.message}`;
     job.updatedAt = Date.now();
     console.error('[生成任务] 执行失败:', error);
@@ -737,9 +1632,7 @@ async function createGenerationJob(req, res) {
 
   const contentType = req.headers['content-type'] || '';
   const userId = req.headers['x-user-id'];
-  const requestedQuality = QUALITY_COSTS[req.headers['x-quality']]
-    ? req.headers['x-quality']
-    : '1k';
+  const requestedQuality = FIXED_IMAGE_QUALITY;
   const settings = await getAppSettings();
 
   if (!settings.apiEnabled) {
@@ -775,7 +1668,7 @@ async function createGenerationJob(req, res) {
       return;
     }
 
-    quality = QUALITY_COSTS[params.quality] ? params.quality : requestedQuality;
+    quality = FIXED_IMAGE_QUALITY;
     headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${settings.apiKey}`,
@@ -783,19 +1676,18 @@ async function createGenerationJob(req, res) {
     };
   }
 
-  const authResult = await ensureUserCanAfford(userId, quality);
+  const authResult = await ensureUserCanGenerate(userId);
   if (!authResult.ok) {
     sendJson(res, authResult.status, authResult.body);
     return;
   }
 
-  const cost = QUALITY_COSTS[quality] || QUALITY_COSTS['1k'];
   const jobId = createJobId();
   const job = {
     id: jobId,
     userId,
     user: authResult.user,
-    cost,
+    quotaType: authResult.quotaType,
     quality,
     type,
     status: 'queued',
@@ -904,7 +1796,7 @@ function parseRequestBody(req) {
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Id, X-Quality');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Id, X-Quality, X-Device-Fingerprint');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
@@ -916,6 +1808,14 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
 
   try {
+    if (req.method === 'POST' && pathname === '/api/wechat/login') {
+      const data = await parseRequestBody(req);
+      const clientIp = ((req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0]).trim();
+      const result = await loginWithWechat(data, clientIp);
+      sendJson(res, 200, { success: true, ...result });
+      return;
+    }
+
     if (req.method === 'POST' && pathname === '/api/login') {
       const data = await parseRequestBody(req);
       const username = (data.username || '').trim();
@@ -923,6 +1823,7 @@ const server = http.createServer(async (req, res) => {
       const realName = (data.realName || '').trim();
       const isRegister = data.isRegister === true;
       const clientIp = ((req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0]).trim();
+      const deviceFingerprint = hashDeviceFingerprint(data.deviceFingerprint || data.clientFingerprint || req.headers['x-device-fingerprint'] || '');
 
       if (!username || !password) {
         sendJson(res, 400, { error: '用户名和密码不能为空' });
@@ -943,6 +1844,12 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
+        const allowResult = await ensureRegistrationAllowed(clientIp, deviceFingerprint);
+        if (!allowResult.ok) {
+          sendJson(res, allowResult.status, { error: allowResult.message });
+          return;
+        }
+
         const now = Date.now();
 
         const newId = `uid_${now}`;
@@ -953,35 +1860,29 @@ const server = http.createServer(async (req, res) => {
             username,
             real_name: realName,
             password_hash: passwordHash,
-            points: 580,
+            points: 0,
+            free_quota_remaining: FREE_TRIAL_QUOTA,
+            monthly_quota_used: 0,
+            quota_period: getQuotaPeriod(),
+            device_fingerprint: deviceFingerprint,
+            membership_type: 'free',
+            membership_expires_at: 0,
             registered_at: now,
             register_ip: clientIp,
             open_id: null,
             created_at: now,
             updated_at: now,
           };
-          jsonIpRegistrations[clientIp] = now;
           persistJsonUsers();
-          persistJsonIpRegistrations();
         } else {
           await query(
             `INSERT INTO users
-             (id, username, real_name, password_hash, points, registered_at, register_ip, open_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [newId, username, realName, passwordHash, 580, now, clientIp, null, now, now]
-          );
-          await query(
-            `INSERT INTO ip_registrations (ip, last_registered_at)
-             VALUES (?, ?)
-             ON DUPLICATE KEY UPDATE last_registered_at = VALUES(last_registered_at)`,
-            [clientIp, now]
-          );
-          await query(
-            `INSERT INTO point_logs (user_id, change_amount, balance_after, action, note, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [newId, 580, 580, 'register_bonus', '新用户注册赠送积分', now]
+             (id, username, real_name, password_hash, points, free_quota_remaining, monthly_quota_used, quota_period, device_fingerprint, membership_type, membership_expires_at, registered_at, register_ip, open_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [newId, username, realName, passwordHash, 0, FREE_TRIAL_QUOTA, 0, getQuotaPeriod(), deviceFingerprint, 'free', 0, now, clientIp, null, now, now]
           );
         }
+        await recordRegistration(clientIp, deviceFingerprint, newId);
         user = await getUserById(newId);
         isNew = true;
       } else {
@@ -996,6 +1897,7 @@ const server = http.createServer(async (req, res) => {
           sendJson(res, 401, { error: '密码错误' });
           return;
         }
+
       }
 
       sendJson(res, 200, { success: true, user: normalizeUser(user), isNew });
@@ -1021,10 +1923,22 @@ const server = http.createServer(async (req, res) => {
           apiEndpoint: settings.apiEndpoint,
           model: settings.model,
           apiEnabled: settings.apiEnabled,
-          timerEnd: settings.timerEnd,
           apiConfigured: !!settings.apiKey,
         },
       });
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/templates') {
+      const templates = await listUserTemplates(url.searchParams.get('category'));
+      sendJson(res, 200, { success: true, templates });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/templates') {
+      const data = await parseRequestBody(req);
+      const template = await createUserTemplate(data);
+      sendJson(res, 200, { success: true, template });
       return;
     }
 
@@ -1034,16 +1948,26 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && pathname === '/api/admin/session') {
+      const user = await ensureAdminUser();
+      sendJson(res, 200, { success: true, user: normalizeUser(user) });
+      return;
+    }
+
     if (req.method === 'POST' && pathname === '/api/recharge') {
-      const { userId, points } = await parseRequestBody(req);
-      const delta = parseInt(points, 10);
-      if (!userId || Number.isNaN(delta) || delta <= 0) {
-        sendJson(res, 400, { error: '充值失败' });
+      sendJson(res, 403, { error: '请通过会员中心联系客服开通月会员' });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/admin/membership') {
+      const { userId, membershipType } = await parseRequestBody(req);
+      if (!userId || membershipType !== 'monthly') {
+        sendJson(res, 400, { error: '会员升级失败' });
         return;
       }
-      const updatedUser = await updateUserPoints(userId, delta, 'user_recharge', '用户自助充值');
+      const updatedUser = await updateUserMembership(userId, membershipType);
       if (!updatedUser) {
-        sendJson(res, 400, { error: '充值失败' });
+        sendJson(res, 400, { error: '会员升级失败' });
         return;
       }
       sendJson(res, 200, { success: true, user: normalizeUser(updatedUser) });
@@ -1059,28 +1983,56 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && pathname === '/api/admin/recharge') {
-      const { userId, points } = await parseRequestBody(req);
-      const delta = parseInt(points, 10);
+      const { userId, points, quota } = await parseRequestBody(req);
+      const delta = parseInt(quota ?? points, 10);
       if (!userId || Number.isNaN(delta) || delta <= 0) {
-        sendJson(res, 400, { error: '充值失败' });
+        sendJson(res, 400, { error: '加次数失败' });
         return;
       }
-      const updatedUser = await updateUserPoints(userId, delta, 'admin_recharge', '管理员手动充值');
+      const updatedUser = await updateUserFreeQuota(userId, delta, 'admin_quota_add', '管理员手动增加免费次数');
       if (!updatedUser) {
-        sendJson(res, 400, { error: '充值失败' });
+        sendJson(res, 400, { error: '加次数失败' });
         return;
       }
       sendJson(res, 200, { success: true, user: normalizeUser(updatedUser) });
       return;
     }
 
-    if (req.method === 'POST' && pathname === '/api/admin/settings') {
+    if (req.method === 'POST' && pathname === '/api/user/update') {
+      const { userId, username, realName } = await parseRequestBody(req);
+      if (!userId || !username) {
+        sendJson(res, 400, { error: '参数不完整' });
+        return;
+      }
+      
+      const now = Date.now();
+      if (useJsonStore) {
+        if (!jsonUsers[userId]) {
+          sendJson(res, 404, { error: '用户不存在' });
+          return;
+        }
+        jsonUsers[userId].username = username;
+        jsonUsers[userId].real_name = realName;
+        jsonUsers[userId].updated_at = now;
+        persistJsonUsers();
+        sendJson(res, 200, { success: true, user: normalizeUser(jsonUsers[userId]) });
+      } else {
+        await query(
+          'UPDATE users SET username = ?, real_name = ?, updated_at = ? WHERE id = ?',
+          [username, realName, now, userId]
+        );
+        const updatedUser = await getUserById(userId);
+        sendJson(res, 200, { success: true, user: normalizeUser(updatedUser) });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && (pathname === '/api/admin/points' || pathname === '/api/admin/settings')) {
       const data = await parseRequestBody(req);
       const apiEndpoint = (data.apiEndpoint || '').trim();
       const apiKey = (data.apiKey || '').trim();
       const model = (data.model || DEFAULT_APP_SETTINGS.model).trim();
       const apiEnabled = data.apiEnabled === true;
-      const timerEnd = data.timerEnd ? String(data.timerEnd) : null;
 
       if (!apiEndpoint) {
         sendJson(res, 400, { error: 'API接口地址不能为空' });
@@ -1092,7 +2044,6 @@ const server = http.createServer(async (req, res) => {
         apiKey,
         model,
         apiEnabled: apiEnabled && !!apiKey,
-        timerEnd: apiEnabled && !!apiKey ? timerEnd : null,
       });
 
       sendJson(res, 200, { success: true, settings });
@@ -1147,11 +2098,11 @@ const server = http.createServer(async (req, res) => {
     serveFile(res, filePath);
   } catch (error) {
     console.error('[服务器] 错误:', error);
-    sendJson(res, 500, { error: '服务器内部错误' });
+    sendJson(res, error.statusCode || 500, { error: error.statusCode ? error.message : '服务器内部错误' });
   }
 });
 
-// 2K/4K 出图耗时较长，关闭默认请求超时，避免连接被服务端提前断开。
+// 关闭默认请求超时，避免图片生成过程中连接被服务端提前断开。
 server.requestTimeout = 0;
 server.timeout = 0;
 
@@ -1159,10 +2110,12 @@ initDatabase()
   .then(() => {
     server.listen(PORT, () => {
       console.log('');
-      console.log('  CYBER FORGE MySQL 后端已启动');
+      console.log(useJsonStore ? '  CYBER FORGE 本地 JSON 后端已启动' : '  CYBER FORGE MySQL 后端已启动');
       console.log('  ---------------------------');
       console.log(`  本地地址: http://localhost:${PORT}`);
-      console.log(`  MySQL: ${MYSQL_CONFIG.host}:${MYSQL_CONFIG.port}/${MYSQL_CONFIG.database}`);
+      console.log(useJsonStore
+        ? '  数据模式: JSON 本地兜底（启动 MySQL 后会自动使用数据库）'
+        : `  MySQL: ${MYSQL_CONFIG.host}:${MYSQL_CONFIG.port}/${MYSQL_CONFIG.database}`);
       console.log('  按 Ctrl+C 停止服务器');
       console.log('');
     });

@@ -1,11 +1,17 @@
 node_modules/
+__pycache__/
+*.pyc
 app.db
 users.json
 ip_records.json
 app_settings.json
+user_templates.json
 *.log
 .env
 .env.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# 本地素材整理备份，不参与部署
+图标素材/上传包备份/

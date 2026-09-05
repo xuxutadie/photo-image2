@@ -1,10 +1,10 @@
 @echo off
 cd /d "%~dp0"
-title Cyber Forge Launcher
+title 智影魔图 Launcher
 
 echo.
 echo ====================================
-echo    Cyber Forge - AI Image Generator
+echo    智影魔图 - AI Image Generator
 echo ====================================
 echo.
 

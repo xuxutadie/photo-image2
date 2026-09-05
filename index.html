@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>新起点画室 - AI绘图工具</title>
+<title>智影魔图 - AI绘图工具</title>
 <script type="module" src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs"></script>
 <style>
 /* CYBERPUNK THEME REFACTORED */
@@ -60,6 +60,10 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-weight: bold; color: #fff; font-size: 12px;
   box-shadow: var(--glow-blue);
+}
+.header-logo-img {
+  width: 32px; height: 32px;
+  object-fit: contain;
 }
 .header-title-left {
   font-size: 14px; font-weight: 600; color: var(--text-bright);
@@ -284,13 +288,19 @@ body {
   .frame-tr { position: absolute; top: 0px; right: 0px; width: 20px; height: 20px; border: 2px solid var(--neon-cyan); border-left: none; border-bottom: none; }
   .frame-bl { position: absolute; bottom: 0px; left: 0px; width: 20px; height: 20px; border: 2px solid var(--neon-cyan); border-right: none; border-top: none; }
 
-.ai-logo-center {
+.ai-logo-center,
+.ai-logo-center-img {
   width: 80px; height: 80px; border-radius: 50%;
   border: 2px solid var(--neon-blue);
   display: flex; align-items: center; justify-content: center;
   font-size: 32px; font-weight: bold; color: var(--neon-cyan);
   box-shadow: 0 0 30px rgba(0, 229, 255, 0.3), inset 0 0 20px rgba(0, 229, 255, 0.2);
   margin-bottom: 24px; position: relative;
+}
+.ai-logo-center-img {
+  object-fit: contain;
+  background: rgba(41, 121, 255, 0.1);
+  border: 1px solid var(--neon-blue);
 }
 .ai-logo-center::after {
   content: ''; position: absolute; bottom: -20px; width: 120px; height: 10px;
@@ -400,9 +410,10 @@ body {
   display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px;
 }
 .scenario-card {
-  display: flex; align-items: center; padding: 12px;
+  display: flex; align-items: center; width: 100%; padding: 12px;
   background: var(--bg-card); border: 1px solid var(--border-dim);
   border-radius: 8px; cursor: pointer; transition: var(--transition);
+  color: inherit; font: inherit; text-align: left;
 }
 .scenario-card:hover {
   border-color: var(--neon-purple); transform: translateX(-2px);
@@ -429,7 +440,7 @@ body {
 }
 .history-clear:hover { color: var(--neon-pink); }
 .history-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
   padding: 0 16px;
 }
 .history-item {
@@ -487,18 +498,46 @@ body {
 }
 
 @media (max-width: 768px) {
+  html, body {
+    width: 100%;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
   .main-container {
     grid-template-columns: 1fr;
     display: flex;
     flex-direction: column;
+    max-height: none;
+    min-height: 100vh;
+    padding: 10px 10px calc(18px + env(safe-area-inset-bottom));
+    gap: 10px;
   }
+  .panel,
+  .center-col {
+    width: 100%;
+    min-height: auto;
+    max-height: none;
+    overflow: visible;
+    border-radius: 10px;
+  }
+  .left-col { order: 1; }
+  .center-col { order: 2; }
+  .right-col { order: 3; }
   .right-col {
+    display: flex;
+    flex-direction: column;
     grid-template-columns: 1fr;
+    gap: 12px;
   }
   .header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
     flex-wrap: wrap;
-    justify-content: center;
-    gap: 12px;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px;
   }
   .header-center {
     position: static;
@@ -506,14 +545,72 @@ body {
     order: -1;
     width: 100%;
     text-align: center;
+    font-size: 18px;
+    letter-spacing: 0;
   }
   .header-right {
-    justify-content: center;
+    justify-content: flex-start;
     width: 100%;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .header-right-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .header-right-item:nth-child(4) {
+    display: none;
+  }
+  .user-profile {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    max-width: 220px;
+  }
+  #userNameDisplay,
+  #userPointsDisplay {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .left-section {
+    padding-bottom: 12px;
+  }
+  .layout-cards,
+  .ratio-selector {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .center-display-area {
-    min-height: 300px;
+    min-height: 320px;
+    height: 52vh;
+    max-height: 520px;
+    margin: 10px;
+    margin-top: 12px;
+  }
+  .generate-btn-wrapper {
+    position: sticky;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    z-index: 30;
+    padding-top: 8px;
+    background: linear-gradient(180deg, transparent, var(--bg-panel) 35%);
+  }
+  .btn-generate {
+    min-height: 52px;
+  }
+  .scenario-list,
+  .history-grid {
+    max-height: none;
+    overflow: visible;
+  }
+  .admin-overlay {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 18px 10px;
+  }
+  .admin-panel {
+    width: 100%;
+    max-width: 420px;
+    padding: 20px;
   }
   body {
     height: auto;
@@ -573,13 +670,13 @@ body {
   <!-- HEADER -->
   <header class="header">
     <div class="header-left">
-      <div class="header-logo-icon">AI</div>
+      <img src="图标素材/logo.png" class="header-logo-img" alt="Logo">
       <div class="header-title-left">IMAGE-2</div>
     </div>
-    <div class="header-center">AI Horizon</div>
+    <div class="header-center">智影魔图</div>
     <div class="header-right">
       <div class="header-right-item" onclick="openAdmin()" title="管理面板"><span>⚙️</span> 管理后台</div>
-      <div class="header-right-item"><span>💎</span> 会员中心</div>
+      <div class="header-right-item" onclick="toggleUserMenu()"><span>💎</span> 会员中心</div>
       <div class="header-right-item" onclick="openTutorial()" style="cursor:pointer;"><span>❓</span> 使用教程</div>
       <div class="header-right-item"><span>🔔</span></div>
       <div class="user-profile" style="cursor:pointer;" onclick="toggleUserMenu()">
@@ -621,7 +718,7 @@ body {
         <span class="section-header-sub"><span id="promptCount">0</span>/1000</span>
       </div>
       <div class="prompt-area">
-        <textarea class="prompt-textarea" id="mainPrompt" placeholder="请输入描述词，支持中英文，例如：&#10;未来城市，赛博朋克风格，夜晚，霓虹灯，&#10;高楼大厦，飞行汽车，超清画质..." oninput="document.getElementById('promptCount').textContent=this.value.length"></textarea>
+        <textarea class="prompt-textarea" id="mainPrompt" placeholder="请输入描述词，支持中英文，例如：&#10;未来城市，赛博朋克风格，夜晚，霓虹灯，&#10;高楼大厦，飞行汽车，细节清晰..." oninput="document.getElementById('promptCount').textContent=this.value.length"></textarea>
       </div>
     </div>
 
@@ -682,35 +779,12 @@ body {
       </div>
     </div>
 
-    <!-- Quality -->
-    <div class="left-section">
-      <div class="section-header">
-        <span>画质选择</span>
-        <span>^</span>
-      </div>
-      <div class="ratio-selector" id="qualitySelector">
-        <div class="ratio-card active" data-quality="1k" onclick="selectQualityUI('1k', this)">
-          <span style="font-size:14px;font-weight:bold;margin-bottom:2px;">1K (58积分)</span>
-          <span style="font-size:10px;">普通画质</span>
-        </div>
-        <div class="ratio-card" data-quality="2k" onclick="selectQualityUI('2k', this)">
-          <span style="font-size:14px;font-weight:bold;margin-bottom:2px;">2K (98积分)</span>
-          <span style="font-size:10px;">高清约5分钟</span>
-        </div>
-        <div class="ratio-card" data-quality="4k" onclick="selectQualityUI('4k', this)">
-          <span style="font-size:14px;font-weight:bold;margin-bottom:2px;">4K (128积分)</span>
-          <span style="font-size:10px;">超清约10分钟</span>
-        </div>
-      </div>
-    </div>
-
     <!-- Hidden legacy inputs for compatibility -->
     <div class="hidden">
         <input type="radio" name="mode" id="mode-single" value="single" checked>
         <input type="radio" name="mode" id="mode-9grid" value="9grid">
         <input type="radio" name="mode" id="mode-25grid" value="25grid">
         <div id="gridHint"><span id="gridHintText"></span></div>
-        <div id="qualitySelector"><button class="active" data-quality="1k">1K</button></div>
         <span id="statusDot"></span><span id="statusText"></span>
         <div id="apiWarning"></div><div id="apiInfo"></div><div id="corsNote"></div><div id="proxyOk"></div>
     </div>
@@ -729,7 +803,7 @@ body {
       <div class="frame-bl"></div>
       
       <div id="centerEmpty">
-        <div class="ai-logo-center">AI</div>
+        <img src="图标素材/logo.png" class="ai-logo-center-img" alt="Logo">
         <div class="center-empty-text">
           输入提示词，选择参数，点击“生成图片”<br>
           AI 将为你创作精美的图像
@@ -759,48 +833,7 @@ body {
   <div class="panel right-col">
     <!-- Scenarios -->
     <div class="section-header" style="padding: 16px 16px 0;">应用场景</div>
-    <div class="scenario-list">
-      <div class="scenario-card" onclick="applyTemplate('二次曝光', '根据【主题】自动生成一张收藏版史诗叙事海报：巨大的【具体人物/物体】侧脸剪影作为外轮廓，剪影内部自动生长出最契合该主题的完整世界观、标志性场景、角色关系、象征符号、关键建筑、生物、道具与氛围【具体描述】。整体不是普通拼贴，而是高级的剪影轮廓填充式叙事合成，带有双重曝光式联想，但更偏电影海报与梦幻水彩插画融合风格；柔和空气透视，轻雾化过渡，纸张颗粒，边缘飞白与刷痕，大面积留白，版式克制高级，安静、宏大、神圣、怀旧、诗意、传说感【你想要的其他描述词】。风格、色彩、场景、材质全部根据主题自动适配，所有元素必须强绑定主题，一眼识别，不要杂乱，不要硬拼贴，不要模板化背景，不要廉价奇幻素材。')">
-        <div class="scenario-icon">🌌</div>
-        <div class="scenario-info">
-          <div class="scenario-title">二次曝光</div>
-          <div class="scenario-desc">剪影轮廓，双重曝光叙事</div>
-        </div>
-        <img class="scenario-thumb" src="图标素材/双重曝光.png">
-      </div>
-      <div class="scenario-card" onclick="applyTemplate('爆炸图', '生成一张【】的爆炸视图，包含每个组件的名称以及这款产品的几大核心卖点。')">
-        <div class="scenario-icon">💥</div>
-        <div class="scenario-info">
-          <div class="scenario-title">爆炸图</div>
-          <div class="scenario-desc">核心组件，卖点爆炸视图</div>
-        </div>
-        <img class="scenario-thumb" src="图标素材/爆炸图.png">
-      </div>
-      <div class="scenario-card" onclick="applyTemplate('游戏界面', '生成1张真人画风的古风仙侠类型开放世界网络游戏的画面，3A游戏级别的精美画质，角色包括古风仙界的师兄帅哥、冰山美人师姐和机灵可爱的小师妹等。要有视觉冲击力极强的游戏登录主界面、角色半身像占据主要画面的角色选择界面、角色抽卡界面等。游戏中的画早第三人称追尾视角，画面中要有合理的游戏UI布局，游戏UI简约一点，要有角色状态、队伍角色、小地图、任务列表、操作按钮等以游戏操作为主的UI界面，不要出现太多商城、氪金类的UI界面。让角色在风景优美的城镇、仙界、野外闲逛，让角色面对各种敌人的战斗场面，要有角色攻击敌人、释放华丽的大招的战斗场景等等。')">
-        <div class="scenario-icon">🎮</div>
-        <div class="scenario-info">
-          <div class="scenario-title">游戏界面</div>
-          <div class="scenario-desc">仙侠开放世界，3A级UI</div>
-        </div>
-        <img class="scenario-thumb" src="图标素材/游戏界面.png">
-      </div>
-      <div class="scenario-card" onclick="applyTemplate('品牌全案', '请为这个IP设计一套品牌全案')">
-        <div class="scenario-icon">💼</div>
-        <div class="scenario-info">
-          <div class="scenario-title">品牌全案</div>
-          <div class="scenario-desc">IP设计，完整品牌方案</div>
-        </div>
-        <img class="scenario-thumb" src="图标素材/品牌全案.png">
-      </div>
-      <div class="scenario-card" onclick="applyTemplate('个人卡片', '设计一张卡通个人卡片展示，性别【男性】，星座【巨蟹】座，人格【ENTP】。')">
-        <div class="scenario-icon">🪪</div>
-        <div class="scenario-info">
-          <div class="scenario-title">个人卡片</div>
-          <div class="scenario-desc">卡通展示，性别/星座/人格</div>
-        </div>
-        <img class="scenario-thumb" src="图标素材/个人卡片.png">
-      </div>
-    </div>
+    <div class="scenario-list" id="scenarioList"></div>
 
     <!-- History -->
     <div class="history-header">
@@ -829,7 +862,7 @@ body {
     <div id="adminSettings" class="hidden" style="max-height:60vh;overflow-y:auto;padding-right:10px;">
       <!-- User Management Section -->
       <div style="margin-bottom: 20px; padding: 12px; border: 1px dashed var(--neon-cyan); border-radius: 8px;">
-        <h4 style="color:var(--neon-cyan);margin-bottom:10px;font-size:14px;">👥 用户与积分管理</h4>
+        <h4 style="color:var(--neon-cyan);margin-bottom:10px;font-size:14px;">👥 用户与次数管理</h4>
         <button class="btn" style="width:100%;background:rgba(0,229,255,0.1);color:var(--neon-cyan);border:1px solid var(--neon-cyan);margin-bottom:10px;" onclick="loadAdminUsers()">加载用户列表</button>
         <div id="adminUserList" style="max-height:150px;overflow-y:auto;font-size:12px;color:var(--text-bright);margin-bottom:10px;"></div>
       </div>
@@ -860,15 +893,6 @@ body {
       <label style="font-size:12px;color:var(--text-dim);">模型</label>
       <input type="text" id="modelSelect" class="form-input" value="gpt-image-2">
       
-      <!-- Auto-off timer -->
-      <label style="font-size:12px;color:var(--text-dim);">定时关闭</label>
-      <div style="display:flex;gap:8px;">
-        <input type="number" class="form-input" id="timerHours" placeholder="小时" min="0" value="0" style="flex:1;">
-        <input type="number" class="form-input" id="timerMinutes" placeholder="分钟" min="0" value="0" style="flex:1;">
-        <button class="btn" style="background:rgba(255,152,0,0.1);border:1px solid #ff9800;color:#ff9800;flex:1;height:38px;padding:0;" onclick="setAutoOffTimer()">启动定时</button>
-      </div>
-      <div id="timerInfo" style="font-size:11px;color:#ff9800;margin-top:4px;display:none;"></div>
-      
       <!-- Change admin password -->
       <label style="font-size:12px;color:var(--text-dim);margin-top:12px;display:block;">修改管理员密码</label>
       <input type="password" id="newPasswordInput" class="form-input" placeholder="新密码（留空则不修改）">
@@ -881,15 +905,15 @@ body {
   </div>
 </div>
 
-<!-- ADMIN RECHARGE MODAL -->
+<!-- ADMIN QUOTA MODAL -->
 <div class="admin-overlay hidden" id="adminRechargeOverlay" onclick="closeAdminRechargeModal()">
   <div class="admin-panel" onclick="event.stopPropagation()" style="text-align:center;max-width:360px;width:90%;">
-    <h3 style="color:var(--neon-cyan);margin-bottom:12px;">管理员充值</h3>
-    <p id="adminRechargeTitle" style="font-size:12px;color:var(--text-dim);margin-bottom:16px;">请输入要充值的积分数量</p>
-    <input type="number" id="adminRechargePointsInput" class="form-input" placeholder="请输入积分数量" min="1" style="margin-bottom:16px;">
+    <h3 style="color:var(--neon-cyan);margin-bottom:12px;">管理员加次数</h3>
+    <p id="adminRechargeTitle" style="font-size:12px;color:var(--text-dim);margin-bottom:16px;">请输入要增加的免费次数</p>
+    <input type="number" id="adminRechargePointsInput" class="form-input" placeholder="请输入次数" min="1" style="margin-bottom:16px;">
     <div style="display:flex;gap:10px;">
       <button class="btn" style="flex:1;background:transparent;border:1px solid var(--border-dim);color:var(--text-dim);" onclick="closeAdminRechargeModal()">取消</button>
-      <button class="btn btn-primary" style="flex:1;" onclick="submitAdminRecharge()">确认充值</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="submitAdminRecharge()">确认增加</button>
     </div>
   </div>
 </div>
@@ -919,12 +943,12 @@ body {
 <div class="admin-overlay hidden" id="loginOverlay" onclick="closeLogin()">
   <div class="admin-panel" onclick="event.stopPropagation()" style="text-align: center;">
     <h3 style="color:var(--neon-blue);margin-bottom:10px;">登录 / 注册</h3>
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:20px;">新用户注册即赠送 580 积分</p>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:20px;">新用户注册即赠送 10 次免费生成机会</p>
     
     <div style="display:flex;flex-direction:column;gap:15px;margin-bottom:20px;">
       <input type="text" id="loginUsername" placeholder="请输入账号" style="padding:10px;border-radius:4px;border:1px solid var(--border-dim);background:var(--bg-dark);color:var(--text-bright);font-size:14px;width:100%;box-sizing:border-box;">
       <input type="password" id="loginPassword" placeholder="请输入密码" style="padding:10px;border-radius:4px;border:1px solid var(--border-dim);background:var(--bg-dark);color:var(--text-bright);font-size:14px;width:100%;box-sizing:border-box;">
-      <input type="text" id="loginRealName" placeholder="真实姓名 (仅注册时必填，方便充值核对)" style="padding:10px;border-radius:4px;border:1px solid var(--border-dim);background:var(--bg-dark);color:var(--text-bright);font-size:14px;width:100%;box-sizing:border-box;">
+      <input type="text" id="loginRealName" placeholder="真实姓名 (仅注册时必填，方便会员核对)" style="padding:10px;border-radius:4px;border:1px solid var(--border-dim);background:var(--bg-dark);color:var(--text-bright);font-size:14px;width:100%;box-sizing:border-box;">
     </div>
     
     <div style="display:flex;gap:10px;">
@@ -934,17 +958,17 @@ body {
   </div>
 </div>
 
-<!-- RECHARGE MODAL -->
+<!-- MEMBERSHIP MODAL -->
 <div class="admin-overlay hidden" id="rechargeOverlay" onclick="closeRecharge()">
   <div class="admin-panel" onclick="event.stopPropagation()" style="text-align: center;">
-    <h3 style="color:var(--neon-purple);margin-bottom:20px;">积分充值</h3>
+    <h3 style="color:var(--neon-purple);margin-bottom:20px;">会员中心</h3>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;align-items:center;">
       <div style="font-size:14px;color:var(--text-bright);line-height:1.8;">
-        <div>💎 10元 = 4833积分</div>
-        <div>💎 20元 = 9999积分</div>
-        <div>💎 50元 = 28000积分</div>
+        <div>月会员：19.9 元 / 30 天</div>
+        <div>会员期内最多可生成 200 次</div>
+        <div>生成成功扣 1 次，失败或取消不扣</div>
       </div>
-      <p style="font-size:12px;color:var(--neon-pink);margin-top:10px;">充值请扫码添加客服微信</p>
+      <p style="font-size:12px;color:var(--neon-pink);margin-top:10px;">开通会员请扫码添加客服微信</p>
       <img src="./图标素材/wechat_qr.png" alt="客服微信二维码" style="width:150px;height:150px;border:2px solid var(--neon-cyan);border-radius:8px;object-fit:cover;background:#fff;" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNTAiIGhlaWdodD0iMTUwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZWVlIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjOTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+5LqM57u056CB5Y2g5L2N5ZubPC90ZXh0Pjwvc3ZnPg==';">
     </div>
     <button class="btn" style="width:100%;background:rgba(255,64,129,0.1);border:1px solid var(--neon-pink);color:var(--neon-pink);margin-top:10px;" onclick="logout()">退出登录</button>
@@ -954,12 +978,12 @@ body {
 <!-- TUTORIAL MODAL -->
 <div class="admin-overlay hidden" id="tutorialOverlay" onclick="closeTutorial()">
   <div class="admin-panel" onclick="event.stopPropagation()" style="max-height:80vh;overflow-y:auto;text-align:left;max-width:500px;width:90%;">
-    <h3 style="color:var(--neon-cyan);margin-bottom:20px;text-align:center;border-bottom:1px solid var(--border-dim);padding-bottom:10px;">📚 使用教程与充值指南</h3>
+    <h3 style="color:var(--neon-cyan);margin-bottom:20px;text-align:center;border-bottom:1px solid var(--border-dim);padding-bottom:10px;">📚 使用教程与会员说明</h3>
     
     <div style="margin-bottom:20px;">
       <h4 style="color:var(--neon-purple);margin-bottom:10px;">1. 如何开始绘图？</h4>
       <ul style="font-size:13px;color:var(--text-dim);line-height:1.6;padding-left:20px;margin:0;">
-        <li>首先点击右上角进行<strong>注册或登录</strong>。新用户首次注册将获赠 580 积分。</li>
+        <li>首先点击右上角进行<strong>注册或登录</strong>。新用户首次注册将获赠 10 次免费生成机会。</li>
         <li>在左侧的输入框中输入您想要生成的画面描述（支持中英文）。</li>
         <li>选择您想要的<strong>图片比例</strong>（如16:9、9:16等）。</li>
         <li>选择生成模式（单图、9宫格、25宫格）。</li>
@@ -968,27 +992,26 @@ body {
     </div>
 
     <div style="margin-bottom:20px;">
-      <h4 style="color:var(--neon-purple);margin-bottom:10px;">2. 积分消耗规则</h4>
+      <h4 style="color:var(--neon-purple);margin-bottom:10px;">2. 次数消耗规则</h4>
       <ul style="font-size:13px;color:var(--text-dim);line-height:1.6;padding-left:20px;margin:0;">
-        <li>生成 <strong>1K</strong> 普通画质：每次消耗 <strong>58</strong> 积分。</li>
-        <li>生成 <strong>2K</strong> 高清画质：每次消耗 <strong>98</strong> 积分。</li>
-        <li>生成 <strong>4K</strong> 超清画质：每次消耗 <strong>128</strong> 积分。</li>
+        <li>当前 H5 版本统一生成 <strong>1K</strong> 图片：成功生成后扣 <strong>1</strong> 次。</li>
+        <li>生成失败、主动停止或 API 未返回图片时不扣次数。</li>
+        <li>免费账号用完 10 次后，需要开通月会员继续使用。</li>
       </ul>
     </div>
 
     <div style="margin-bottom:20px;">
-      <h4 style="color:var(--neon-purple);margin-bottom:10px;">3. 如何充值积分？</h4>
+      <h4 style="color:var(--neon-purple);margin-bottom:10px;">3. 如何开通会员？</h4>
       <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:10px;">
-        当您的积分不足时，可以通过点击右上角的用户名（或头像）打开充值面板。
+        当免费次数用完时，可以通过点击右上角的用户名、头像或会员中心打开会员面板。
       </p>
       <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border-dim);padding:10px;border-radius:6px;font-size:13px;color:var(--text-bright);">
-        <strong>充值价目表：</strong><br>
-        💎 10元 = 4833 积分<br>
-        💎 20元 = 9999 积分<br>
-        💎 50元 = 28000 积分
+        <strong>会员方案：</strong><br>
+        月会员 19.9 元 / 30 天<br>
+        会员期内最多可生成 200 次
       </div>
       <p style="font-size:13px;color:var(--neon-pink);line-height:1.6;margin-top:10px;font-weight:bold;">
-        💡 充值流程：请在充值面板中扫码添加客服微信，向客服说明需要充值的金额并完成支付，客服会手动为您增加对应积分。
+        💡 开通流程：请在会员面板中扫码添加客服微信，完成支付后由管理员为您开通月会员。
       </p>
     </div>
 
@@ -1001,7 +1024,7 @@ function openTutorial() { document.getElementById('tutorialOverlay').classList.r
 function closeTutorial() { document.getElementById('tutorialOverlay').classList.add('hidden'); }
 
 /* ============================================================
-   CYBER FORGE - AI IMAGE GENERATOR
+   智影魔图 - AI IMAGE GENERATOR
    Main Application Script
    ============================================================ */
 
@@ -1013,15 +1036,160 @@ const GRID_PROMPTS = {
 
 // ===================== PROMPT TEMPLATES =====================
 const TEMPLATES = [
-  { label: '二次曝光', prompt: '根据【主题】自动生成一张收藏版史诗叙事海报：巨大的【具体人物/物体】侧脸剪影作为外轮廓，剪影内部自动生长出最契合该主题的完整世界观、标志性场景、角色关系、象征符号、关键建筑、生物、道具与氛围【具体描述】。整体不是普通拼贴，而是高级的剪影轮廓填充式叙事合成，带有双重曝光式联想，但更偏电影海报与梦幻水彩插画融合风格；柔和空气透视，轻雾化过渡，纸张颗粒，边缘飞白与刷痕，大面积留白，版式克制高级，安静、宏大、神圣、怀旧、诗意、传说感【你想要的其他描述词】。风格、色彩、场景、材质全部根据主题自动适配，所有元素必须强绑定主题，一眼识别，不要杂乱，不要硬拼贴，不要模板化背景，不要廉价奇幻素材。' },
-  { label: '自然风景', prompt: '壮丽自然风光，黄金时刻光线，高山湖泊倒影，8k超清，照片级真实渲染，大气磅礴' },
-  { label: '人像写真', prompt: '专业人像摄影，影棚灯光，背景虚化散景，焦点锐利，优雅气质，时尚杂志风格' },
-  { label: '产品展示', prompt: '产品摄影，纯白背景，影棚布光，商业级质感，简洁干净，极简主义，高清细节' },
-  { label: '动漫风格', prompt: '日系动漫风格插画，鲜艳色彩，精致细节，体积光效，新海诚风格，唯美画面' },
-  { label: '极简黑白', prompt: '极简黑白摄影，高对比度，几何构图，干净线条，艺术感，光影交错，安塞尔亚当斯风格' },
-  { label: '科幻场景', prompt: '科幻场景，未来科技，全息投影显示，电影级画面，虚幻引擎5品质，赛博空间，太空飞船内部' },
-  { label: '复古胶片', prompt: '复古胶片摄影，颗粒质感，暖色调，80年代美学，怀旧氛围，胶片漏光效果，富士胶片色彩' },
+  {
+    label: '双重曝光',
+    desc: '剪影叙事，电影海报',
+    icon: '🌌',
+    image: '图标素材/template-double-exposure.jpg',
+    prompt: '请根据【主题】生成一张双重曝光叙事海报。用巨大的【人物/物体】剪影作为外轮廓，在剪影内部呈现与主题相关的完整故事世界：关键人物、远景场景、象征符号、光影层次和情绪氛围。要求主体轮廓清晰，内部细节有故事感，图片上必须有清晰标题文字，不要水印。'
+  },
+  {
+    label: '爆炸图',
+    desc: '结构拆解，产品卖点',
+    icon: '💥',
+    image: '图标素材/template-exploded-view.jpg',
+    prompt: '请为【产品名称】生成一张产品爆炸图海报。展示中心产品主体、拆解出来的零部件、连接线、功能说明区和核心卖点区。要求结构清楚，部件分布有秩序，图片上必须有清晰标题、卖点和说明文字，不要水印。'
+  },
+  {
+    label: '游戏界面',
+    desc: '开放世界，游戏 UI',
+    icon: '🎮',
+    image: '图标素材/template-game-ui.jpg',
+    prompt: '请生成一张【游戏题材】的游戏界面概念图。包含主场景、角色、角色状态栏、队伍角色、小地图、任务列表、技能按钮和快捷操作区。要求界面信息完整，UI 不遮挡主体，图片上必须有清晰标题、任务或功能文字，适合移动端预览，不要水印。'
+  },
+  {
+    label: '品牌全案',
+    desc: 'IP 延展，视觉系统',
+    icon: '💼',
+    image: '图标素材/template-brand-system.jpg',
+    prompt: '请为【品牌/IP 名称】设计一套品牌视觉全案展示图。包含主视觉、Logo 或标志延展、色彩系统、字体规范、包装应用和社交媒体应用。要求信息有层级，图片上必须有清晰标题、栏目名和说明文字，不要水印。'
+  },
+  {
+    label: '个人卡片',
+    desc: '角色设定，信息展示',
+    icon: '🪪',
+    image: '图标素材/template-profile-card.jpg',
+    prompt: '请设计一张【人物名称】的个人角色卡片。包含人物头像或半身像、姓名区、身份标签、星座/人格/爱好、代表色和装饰元素。要求人物形象突出，分区整洁，图片上必须有清晰姓名、标签和信息文字，不要水印。'
+  },
+  {
+    label: '知识卡片',
+    desc: '一张图讲清知识点',
+    icon: '📚',
+    image: '图标素材/template-student-learning.jpg',
+    prompt: '请围绕【知识主题】制作一张 16:9 横版知识卡片，目标是“一张图讲清楚一个知识点”。请先提炼该主题的核心概念，再用适合该知识点的图解方式表达，例如：结构图、流程图、时间轴、对比表、公式推导、概念关系图、案例拆解、步骤说明或思维导图。固定结构建议包含：醒目标题、核心结论、关键概念解释、3-5 个重点知识点、图形化示意、常见误区、应用示例和一句话总结。要求内容准确、文字清晰、层级分明、图文结合，适合学生学习、复习和快速理解，不要水印。'
+  },
+  {
+    label: '试卷制作',
+    desc: '苏教版六年级英语',
+    icon: '📝',
+    image: '图标素材/template-parent-tutoring.jpg',
+    prompt: '请制作一套苏教版 6 年级下学期英语试卷，满分为 100 分，适合期末复习使用。输出为 16:9 横版试卷预览图，版式清晰、可打印、题型完整。试卷结构包括：标题区、姓名班级、满分 100 分、考试时间、听力选择、词汇填空、单项选择、句型转换、阅读理解、书面表达和评分栏。题目难度符合小学六年级下学期英语水平，内容围绕学校生活、周末计划、过去时、一般将来时、交通方式、购物、健康习惯等主题。要求题目表述准确，分值分配合理，图片上必须有清晰文字，不要水印。'
+  },
+  {
+    label: '教师课件',
+    desc: '9 页 PPT，九宫格展示',
+    icon: '🧑‍🏫',
+    image: '图标素材/template-teacher-courseware.jpg',
+    prompt: '请基于【XXX课文内容】设计一套 9 页 PPT 教师课件，并在一张 16:9 横版图片中以 3x3 九宫格方式展示全部 9 页课件缩略图。课件结构建议为：1 封面导入，2 学习目标，3 生字词/关键词，4 课文朗读或文本理解，5 段落分析，6 重点句子解析，7 课堂互动问题，8 课堂小结/思维导图，9 课后作业/拓展延伸。要求九宫格排列整齐，层级清楚，内容贴合课文，每页有清晰标题区、图文排版和教学重点，不要水印。'
+  },
+  {
+    label: '广告卖点海报',
+    desc: '产品卖点，转化视觉',
+    icon: '📣',
+    image: '图标素材/template-ad-design.jpg',
+    prompt: '请为【产品/服务名称】生成一张广告设计海报。包含主视觉、核心卖点、使用场景、信任背书和行动按钮位置。要求画面聚焦产品利益点，主标题醒目，卖点不超过 3 个，图片上必须有清晰标题、卖点和行动引导文字，不要水印。'
+  },
+  {
+    label: '室内设计方案',
+    desc: '毛坯对比，三风格精装',
+    icon: '🏠',
+    image: '图标素材/template-interior-design.jpg',
+    prompt: '请根据【房屋空间/户型描述】生成一张“毛坯变精装”室内设计对比图。画面左侧展示同一房屋的毛坯状态：灰色水泥墙、原始地面、未安装软装；画面右侧分成 3 个不同精装效果方案。必须保证四个画面中的房屋结构一致，包括窗户位置、墙体比例、层高、视角和空间布局；只改变装修方案、家具、灯光、材质和软装。画面上方必须显示清晰标题“毛坯变精装”，不要人物，不要水印。'
+  },
+  {
+    label: '家装设计',
+    desc: '户型优化，效果方案',
+    icon: '🛋️',
+    image: '图标素材/template-renovation-reference.jpg',
+    prompt: '基于我上传的原始户型图，重新设计一套可落地的室内家装方案，适合【居住人数/家庭结构/生活习惯】居住。请保留真实户型结构与尺寸比例，优化空间布局、居住动线、收纳系统、采光、照明和功能分区。输出为 16:9 横版家装设计方案板，包含：原始户型小图、优化后彩色平面布局图（带尺寸、中文标注、家具摆放）、4-5 张对应 3D 效果渲染图（客厅、餐厅、卧室、卫浴等核心空间）、材料与色彩搭配、设计亮点、可落地建议和方案总结。要求文字清晰易读，方案可实际落地，不要人物，不要水印。'
+  },
+  {
+    label: '老照片修复参考',
+    desc: '修复上色，质感增强',
+    icon: '🖼️',
+    image: '图标素材/template-photo-restoration.jpg',
+    prompt: '请根据【老照片内容描述】生成一张老照片修复效果参考图。保留原始年代信息，提升清晰度，修复划痕、污渍和褪色，适度补色并增强面部细节。不改变人物身份特征，图片上必须有清晰标题和修复前后说明文字，不要水印。'
+  },
+  {
+    label: '历史时间轴',
+    desc: '唐朝发展史，手账风格',
+    icon: '📖',
+    image: '图标素材/template-knowledge-sharing.jpg',
+    prompt: '绘制一张关于中国唐朝发展史的图片，比例为 16:9。要求图片文字清晰。画面应包含：中国唐朝发展史标题、时间轴、618 年唐朝建立、贞观之治、开元盛世、丝绸之路、唐诗文化、安史之乱、藩镇割据、907 年唐朝灭亡等关键节点。可以使用与唐朝历史相关的视觉元素，例如宫殿、长安城、骆驼商队、书卷、诗人、地图等。排版要清晰，文字不要错别字，不要水印。'
+  },
+  {
+    label: '饮食分析及热量测算',
+    desc: '餐食识别，营养拆解',
+    icon: '🥗',
+    image: '图标素材/template-diet-calorie-analysis.jpg',
+    prompt: '根据我上传的餐食照片，生成一张「饮食分析详情信息图」。请先准确识别照片中的真实食物，并按实际摄入量估算营养。如果我补充“没吃完 / 只吃了一半 / 只吃几口 / 替换了某样”，请重新计算。输出为 16:9 横版中文信息图。固定结构：标题区、餐食主图、总热量、碳水/蛋白质/脂肪占比、分菜品营养拆解、饮食优点、风险提醒、优化建议（保留/替换）、餐后建议、综合评分、营养师一句话建议。要求真实准确，符合中国饮食场景，文字清晰，信息分区明确，不要夸张医疗诊断，不要水印。'
+  },
+  {
+    label: '发型设计',
+    desc: '脸型分析，发型推荐',
+    icon: '💇',
+    image: '图标素材/template-hairstyle-design.jpg',
+    prompt: '请根据我上传的人像自拍照片，制作一张个人发型分析图卡。请自动识别人物性别、气质与脸型特征，保留人物原本五官、脸型和真实特征，不改变长相，只在发型上做变化。请根据人物实际情况，自动推荐适合该人物的发型，并分为「最适合」「适合」「普通」「不建议」四类展示。若是女性，可优先展示中长发、卷发、刘海、锁骨发、短发等；若是男性，可优先展示短发、侧分、韩系纹理、寸头、层次短发等。输出为 16:9 横版分析图卡。固定结构：原始人像主图、个人特征分析、脸型分析、发型推荐矩阵、每款发型适合度评分、造型建议和避雷建议。要求人物身份一致、面部真实自然、只改变发型，图片上必须有清晰文字，不要水印，不要夸张整容效果。'
+  },
+  {
+    label: '男生证件照',
+    desc: '上传照片，生成校服证件照',
+    icon: '🪪',
+    image: '图标素材/template-id-photo-boy.jpg',
+    prompt: '请根据我上传的本人正面照片，生成一张男生校服证件照。必须保留原人物真实身份、年龄感、脸型、五官比例、发型轮廓、肤色和自然表情，不要改变长相，不要生成另一个人。将背景替换为干净的浅灰白证件照背景，人物正面平视镜头，头部居中，肩膀自然端正，构图为胸像证件照。服装替换为白色衬衫、灰色领带、藏蓝色英伦学院风针织背心，背心可带简洁徽章和浅色滚边。光线均匀柔和，皮肤自然清晰，画面专业、真实、干净，适合学生证件照和形象照使用。不要水印，不要文字，不要夸张美颜，不要卡通化。'
+  },
+  {
+    label: '女生证件照',
+    desc: '上传照片，生成校服证件照',
+    icon: '🪪',
+    image: '图标素材/template-id-photo-girl.jpg',
+    prompt: '请根据我上传的本人正面照片，生成一张女生校服证件照。必须保留原人物真实身份、年龄感、脸型、五官比例、发型轮廓、眼镜或饰品等个人特征、肤色和自然表情，不要改变长相，不要生成另一个人。将背景替换为干净的浅灰白证件照背景，人物正面平视镜头，头部居中，肩膀自然端正，构图为胸像证件照。服装替换为白色衬衫、红色蝴蝶结领结、藏蓝色英伦学院风针织背心，背心可带简洁徽章和红白滚边。光线均匀柔和，皮肤自然清晰，画面专业、真实、干净，适合学生证件照和形象照使用。不要水印，不要文字，不要夸张美颜，不要卡通化。'
+  },
+  {
+    label: '手相分析',
+    desc: '掌纹标注，综合解读',
+    icon: '✋',
+    image: '图标素材/template-palmistry-analysis.jpg',
+    prompt: '根据我上传的真实手掌照片，生成一张「手相分析图解」海报。请自动识别左手或右手与断掌情况，严格按真实掌纹准确标注生命线、智慧线、感情线、事业线、太阳线、财运线及掌丘位置；禁止镜像错误、缺手指或乱改手型。请保留真实手部，只去除背景。输出为 16:9 横版中文信息图。固定结构：标题区、真实手掌主图、掌纹彩色标注、性格分析、事业分析、财运分析、感情分析、健康倾向、综合分析与一句话建议。内容作为娱乐解读和参考，不作医疗、投资或人生决策依据；图片上必须有清晰文字，不要水印，不要恐怖化。'
+  },
+  {
+    label: '自媒体运营封面',
+    desc: '内容矩阵，爆款封面',
+    icon: '🎬',
+    image: '图标素材/template-media-operation.jpg',
+    prompt: '请为【内容主题】生成一张自媒体运营封面图。包含强主题标题区、人物或场景主视觉、内容亮点、系列感标签和行动引导。要求图片上必须有清晰标题、亮点和标签文字，适合内容平台封面使用，不要水印。'
+  },
 ];
+
+function getOrderedTemplates() {
+  const priority = (template) => {
+    if (template.label === '男生证件照') return 0;
+    if (template.label === '女生证件照') return 1;
+    if (template.image && template.image.includes('template-student-learning')) return 2;
+    if (template.label === '试卷制作') return 3;
+    if (template.label === '教师课件') return 4;
+    if (template.image && template.image.includes('template-knowledge-sharing')) return 5;
+    return 100;
+  };
+
+  return TEMPLATES
+    .map((template, index) => ({ template, index }))
+    .sort((a, b) => {
+      const rankDiff = priority(a.template) - priority(b.template);
+      return rankDiff || a.index - b.index;
+    })
+    .map((item) => item.template);
+}
 
 // ===================== STATE =====================
 const STATE = {
@@ -1033,7 +1201,6 @@ const STATE = {
   history: [],
   adminAuthenticated: false,
   isGenerating: false,
-  autoOffTimeout: null,
   selectedResultIndex: -1
 };
 
@@ -1041,6 +1208,49 @@ let currentUser = null;
 let pendingAdminRechargeUserId = null;
 let pendingConfirmAction = null;
 let pendingDeleteContext = null;
+const HISTORY_LIMIT = 4;
+
+function getOrCreateDeviceFingerprint() {
+  const key = 'cyberforge_device_fingerprint';
+  let fingerprint = localStorage.getItem(key);
+  if (!fingerprint) {
+    const randomPart = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    fingerprint = `h5_${randomPart}`;
+    localStorage.setItem(key, fingerprint);
+  }
+  return fingerprint;
+}
+
+function getQuotaText(user) {
+  if (!user) return '';
+  const quotaRemaining = Number.isFinite(Number(user.quotaRemaining))
+    ? Number(user.quotaRemaining)
+    : Number(user.points || 0);
+  if (user.isMember) {
+    const limit = user.monthlyQuotaLimit || 200;
+    return `会员剩余 ${quotaRemaining}/${limit} 次`;
+  }
+  return `剩余 ${quotaRemaining} 次`;
+}
+
+function formatDate(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) return '未开通';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '未开通';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // ===================== USER & AUTH =====================
 function initUser() {
@@ -1069,7 +1279,7 @@ function updateUserUI() {
   const pointsEl = document.getElementById('userPointsDisplay');
   if (currentUser) {
     nameEl.textContent = currentUser.username;
-    pointsEl.textContent = `(💎 ${currentUser.points})`;
+    pointsEl.textContent = `(${getQuotaText(currentUser)})`;
   } else {
     nameEl.textContent = '未登录';
     pointsEl.textContent = '';
@@ -1133,7 +1343,13 @@ function handleAuth(isRegister) {
 
   fetch('/api/login', { 
     method: 'POST', 
-    body: JSON.stringify({ username, password, realName, isRegister }) 
+    body: JSON.stringify({
+      username,
+      password,
+      realName,
+      isRegister,
+      deviceFingerprint: getOrCreateDeviceFingerprint()
+    }) 
   })
     .then(res => res.json())
     .then(data => {
@@ -1146,27 +1362,15 @@ function handleAuth(isRegister) {
         usernameInput.value = '';
         passwordInput.value = '';
         realNameInput.value = '';
-        showToast(data.isNew ? '注册成功！赠送580积分' : '登录成功！', data.isNew ? 'success' : 'info');
+        showToast(data.isNew ? '注册成功！赠送10次免费生成机会' : '登录成功！', data.isNew ? 'success' : 'info');
       } else {
         showToast(data.error || (isRegister ? '注册失败' : '登录失败'), 'error');
       }
     }).catch(e => showToast('网络请求失败，请重试', 'error'));
 }
 
-function mockRecharge(points) {
-  fetch('/api/recharge', {
-    method: 'POST',
-    body: JSON.stringify({ userId: currentUser.id, points })
-  }).then(res => res.json())
-    .then(data => {
-      if (data.success) {
-        currentUser = data.user;
-        localStorage.setItem('cyberforge_user', JSON.stringify(currentUser));
-        updateUserUI();
-        closeRecharge();
-        showToast(`充值成功！当前积分: ${currentUser.points}`, 'success');
-      }
-    });
+function mockRecharge() {
+  document.getElementById('rechargeOverlay').classList.remove('hidden');
 }
 function logout() {
   currentUser = null;
@@ -1184,12 +1388,19 @@ function loadAdminUsers() {
       const container = document.getElementById('adminUserList');
       if (data.success && data.users.length > 0) {
         container.innerHTML = data.users.map(u => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px;border-bottom:1px solid var(--border-dim);">
-            <span style="flex:1;">${u.username} <span style="color:var(--neon-pink);font-size:12px;font-weight:bold;margin-left:5px;">(${u.realName || '未填写'})</span></span>
-            <span style="width:60px;text-align:right;margin-right:10px;">💎 ${u.points}</span>
-            <div style="display:flex;gap:5px;">
-              <button class="btn" style="padding:2px 8px;font-size:10px;background:var(--neon-cyan);color:#000;" onclick="adminRecharge('${u.id}')">+充值</button>
-              <button class="btn" style="padding:2px 8px;font-size:10px;background:transparent;border:1px solid var(--neon-pink);color:var(--neon-pink);" onclick="adminDeleteUser('${u.id}', '${u.username}')">删除</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border-dim);">
+            <span style="flex:1;min-width:0;">
+              ${escapeHtml(u.username)}
+              <span style="color:var(--neon-pink);font-size:12px;font-weight:bold;margin-left:5px;">(${escapeHtml(u.realName || '未填写')})</span>
+              <br>
+              <span style="color:var(--text-dim);font-size:11px;">
+                免费 ${u.freeQuotaRemaining || 0} 次 / ${u.isMember ? `会员剩余 ${u.monthlyQuotaRemaining || 0}/${u.monthlyQuotaLimit || 200}，到期 ${formatDate(u.membershipExpiresAt)}` : '未开通会员'}
+              </span>
+            </span>
+            <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
+              <button class="btn" style="padding:2px 8px;font-size:10px;background:var(--neon-cyan);color:#000;" onclick="adminRecharge('${u.id}')">加次数</button>
+              <button class="btn" style="padding:2px 8px;font-size:10px;background:rgba(179,71,234,0.2);border:1px solid var(--neon-purple);color:var(--neon-purple);" onclick="adminOpenMonthly('${u.id}')">开月会员</button>
+              <button class="btn" style="padding:2px 8px;font-size:10px;background:transparent;border:1px solid var(--neon-pink);color:var(--neon-pink);" onclick="adminDeleteUser('${u.id}', decodeURIComponent('${encodeURIComponent(u.username)}'))">删除</button>
             </div>
           </div>
         `).join('');
@@ -1201,39 +1412,75 @@ function loadAdminUsers() {
 
 function adminRecharge(userId) {
   pendingAdminRechargeUserId = userId;
-  document.getElementById('adminRechargeTitle').textContent = '请输入要充值的积分数量';
+  document.getElementById('adminRechargeTitle').textContent = '请输入要增加的免费次数';
   document.getElementById('adminRechargePointsInput').value = '';
   document.getElementById('adminRechargeOverlay').classList.remove('hidden');
 }
 
+function adminOpenMonthly(userId) {
+  fetch('/api/admin/membership', {
+    method: 'POST',
+    body: JSON.stringify({ userId, membershipType: 'monthly' })
+  }).then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        showToast('已开通19.9元月会员', 'success');
+        loadAdminUsers();
+        if (currentUser && currentUser.id === userId) {
+          currentUser = data.user;
+          localStorage.setItem('cyberforge_user', JSON.stringify(currentUser));
+          updateUserUI();
+        }
+      } else {
+        showToast(data.error || '开通会员失败', 'error');
+      }
+    }).catch(() => showToast('网络请求失败', 'error'));
+}
+
+function activateAdminUserSession() {
+  fetch('/api/admin/session', { method: 'POST' })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success && data.user) {
+        currentUser = data.user;
+        localStorage.setItem('cyberforge_user', JSON.stringify(currentUser));
+        updateUserUI();
+        showToast('已切换为管理员身份，可直接生成图片', 'success');
+      } else {
+        showToast(data.error || '管理员身份初始化失败', 'error');
+      }
+    }).catch(() => showToast('管理员身份初始化失败', 'error'));
+}
+
 function submitAdminRecharge() {
   const input = document.getElementById('adminRechargePointsInput');
-  const points = parseInt(input.value, 10);
+  const quota = parseInt(input.value, 10);
   if (!pendingAdminRechargeUserId) {
-    showToast('未选择充值用户', 'error');
+    showToast('未选择用户', 'error');
     return;
   }
-  if (!points || Number.isNaN(points) || points <= 0) {
-    showToast('请输入有效的积分数量', 'error');
+  if (!quota || Number.isNaN(quota) || quota <= 0) {
+    showToast('请输入有效的次数', 'error');
     input.focus();
     return;
   }
 
   fetch('/api/admin/recharge', {
     method: 'POST',
-    body: JSON.stringify({ userId: pendingAdminRechargeUserId, points })
+    body: JSON.stringify({ userId: pendingAdminRechargeUserId, quota })
   }).then(res => res.json())
     .then(data => {
       if (data.success) {
-        showToast('为用户充值成功', 'success');
+        showToast('已为用户增加免费次数', 'success');
         loadAdminUsers();
         if (currentUser && currentUser.id === pendingAdminRechargeUserId) {
-          currentUser.points = data.user.points;
+          currentUser = data.user;
+          localStorage.setItem('cyberforge_user', JSON.stringify(currentUser));
           updateUserUI();
         }
         closeAdminRechargeModal();
       } else {
-        showToast(data.error || '充值失败', 'error');
+        showToast(data.error || '加次数失败', 'error');
       }
     }).catch(() => showToast('网络请求失败', 'error'));
 }
@@ -1266,45 +1513,83 @@ const DEFAULTS = {
   apiEndpoint: 'https://api.openai-hk.com/v1/images/generations',
   model: 'gpt-image-2',
   apiEnabled: false,
-  timerEnd: null,
   apiConfigured: false
 };
 
 // ===================== SIZE MAPPING =====================
 const SIZE_MAP = {
   'gpt-image-2': {
-    '1:1':  { '1k': '1024x1024', '2k': '2048x2048', '4k': '2880x2880' },
-    '16:9': { '1k': '1280x720',  '2k': '2048x1152', '4k': '3840x2160' },
-    '9:16': { '1k': '720x1280',  '2k': '1152x2048', '4k': '2160x3840' },
-    '4:3':  { '1k': '1024x768',  '2k': '2048x1536', '4k': '3264x2448' },
-    '3:4':  { '1k': '768x1024',  '2k': '1536x2048', '4k': '2448x3264' },
-    '21:9': { '1k': '1344x576',  '2k': '2016x864',  '4k': '3808x1632' },
-    '9:21': { '1k': '576x1344',  '2k': '864x2016',  '4k': '1632x3808' }
+    '1:1':  { '1k': '1024x1024' },
+    '16:9': { '1k': '1280x720' },
+    '9:16': { '1k': '720x1280' },
+    '4:3':  { '1k': '1024x768' },
+    '3:4':  { '1k': '768x1024' },
+    '21:9': { '1k': '1344x576' },
+    '9:21': { '1k': '576x1344' }
   }
 };
 
 const QUALITY_MAP = {
-  '1k': 'low',
-  '2k': 'medium',
-  '4k': 'high'
+  '1k': 'low'
 };
 
 // ===================== INIT =====================
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   initTemplates();
+  renderScenarioTemplates();
   loadHistory();
   updateStatusIndicator();
-  checkAutoOffTimer();
   setupDragDrop();
 });
 
 // ===================== TEMPLATES =====================
+function renderScenarioTemplates() {
+  const list = document.getElementById('scenarioList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  getOrderedTemplates().forEach((template) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'scenario-card';
+    card.title = template.prompt;
+    card.onclick = () => applyTemplate(template.label, template.prompt);
+
+    const icon = document.createElement('div');
+    icon.className = 'scenario-icon';
+    icon.textContent = template.icon || 'AI';
+
+    const info = document.createElement('div');
+    info.className = 'scenario-info';
+
+    const title = document.createElement('div');
+    title.className = 'scenario-title';
+    title.textContent = template.label;
+
+    const desc = document.createElement('div');
+    desc.className = 'scenario-desc';
+    desc.textContent = template.desc || '点击填入提示词';
+
+    const thumb = document.createElement('img');
+    thumb.className = 'scenario-thumb';
+    thumb.src = template.image || '图标素材/logo.png';
+    thumb.alt = template.label;
+
+    info.appendChild(title);
+    info.appendChild(desc);
+    card.appendChild(icon);
+    card.appendChild(info);
+    card.appendChild(thumb);
+    list.appendChild(card);
+  });
+}
+
 function initTemplates() {
   const grid = document.getElementById('templateGrid');
   if (!grid) return; // Prevent error if templateGrid is missing in new UI
   grid.innerHTML = '';
-  TEMPLATES.forEach(t => {
+  getOrderedTemplates().forEach(t => {
     const btn = document.createElement('button');
     btn.className = 'template-btn';
     btn.textContent = t.label;
@@ -1320,14 +1605,16 @@ function initTemplates() {
 // ===================== HISTORY =====================
 function loadHistory() {
   try {
-    STATE.history = JSON.parse(localStorage.getItem('cyberforge_history') || '[]');
+    STATE.history = JSON.parse(localStorage.getItem('cyberforge_history') || '[]').slice(0, HISTORY_LIMIT);
   } catch(e) { STATE.history = []; }
+  saveHistory();
   renderHistory();
 }
 
 function saveHistory() {
   try {
-    localStorage.setItem('cyberforge_history', JSON.stringify(STATE.history.slice(0, 6)));
+    STATE.history = STATE.history.slice(0, HISTORY_LIMIT);
+    localStorage.setItem('cyberforge_history', JSON.stringify(STATE.history));
   } catch(e) {
     console.warn('保存历史记录失败 (可能是Base64图片过大超出配额):', e);
     // 超出配额时不抛出异常，只保留在内存中供当次会话使用
@@ -1339,7 +1626,7 @@ function addToHistory(result) {
   const src = result.url || (result.b64 ? `data:image/png;base64,${result.b64}` : null);
   if (!src) return;
   STATE.history.unshift({ src, prompt: result.prompt, time: Date.now() });
-  if (STATE.history.length > 6) STATE.history = STATE.history.slice(0, 6);
+  if (STATE.history.length > HISTORY_LIMIT) STATE.history = STATE.history.slice(0, HISTORY_LIMIT);
   saveHistory();
   renderHistory();
 }
@@ -1347,7 +1634,7 @@ function addToHistory(result) {
 function renderHistory() {
   const grid = document.getElementById('historyGrid');
   grid.innerHTML = '';
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < HISTORY_LIMIT; i++) {
     const item = STATE.history[i];
     const thumb = document.createElement('div');
     thumb.className = 'history-item';
@@ -1457,7 +1744,6 @@ function loadSettings() {
       DEFAULTS.apiEndpoint = data.settings.apiEndpoint || DEFAULTS.apiEndpoint;
       DEFAULTS.model = data.settings.model || DEFAULTS.model;
       DEFAULTS.apiEnabled = data.settings.apiEnabled === true;
-      DEFAULTS.timerEnd = data.settings.timerEnd || null;
       DEFAULTS.apiConfigured = data.settings.apiConfigured === true;
 
       document.getElementById('apiEndpoint').value = DEFAULTS.apiEndpoint;
@@ -1466,7 +1752,6 @@ function loadSettings() {
       document.getElementById('apiEnabledToggle').checked = DEFAULTS.apiEnabled;
 
       updateStatusIndicator();
-      updateTimerInfo();
     })
     .catch(() => {
       updateStatusIndicator();
@@ -1488,12 +1773,6 @@ function updateStatusIndicator() {
   if (!DEFAULTS.apiEnabled) {
     dot.className = 'status-dot offline';
     text.textContent = 'API已禁用';
-  } else if (DEFAULTS.timerEnd && new Date(DEFAULTS.timerEnd) <= new Date()) {
-    DEFAULTS.apiEnabled = false;
-    DEFAULTS.timerEnd = null;
-    document.getElementById('apiEnabledToggle').checked = false;
-    dot.className = 'status-dot offline';
-    text.textContent = '定时已到期';
   } else if (!DEFAULTS.apiConfigured) {
     dot.className = 'status-dot offline';
     text.textContent = '管理员未配置API';
@@ -1556,9 +1835,7 @@ function selectRatio(ratio, btn) {
 }
 
 function selectQuality(quality, btn) {
-  STATE.quality = quality;
-  document.querySelectorAll('#qualitySelector .ratio-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  STATE.quality = '1k';
 }
 
 // ===================== REFERENCE IMAGE =====================
@@ -1692,7 +1969,7 @@ function updateGeneratingProgress(startTime, imageCount, sizeNote, extraText = '
   const sec = elapsed % 60;
   const prefix = imageCount > 1 ? `生成 ${imageCount} 张 | ` : '';
   const detail = extraText ? `<br>${extraText}` : '';
-  loadingProgress.innerHTML = `${prefix}${min}:${String(sec).padStart(2, '0')}${sizeNote}${detail}<br><button onclick="cancelGeneration()" class="loading-action-btn">停止生成 (不扣除积分)</button>`;
+  loadingProgress.innerHTML = `${prefix}${min}:${String(sec).padStart(2, '0')}${sizeNote}${detail}<br><button onclick="cancelGeneration()" class="loading-action-btn">停止生成 (不扣次数)</button>`;
 }
 
 async function pollGenerationResult(jobId, startTime, imageCount, sizeNote) {
@@ -1714,7 +1991,7 @@ async function pollGenerationResult(jobId, startTime, imageCount, sizeNote) {
     const job = data.job;
     const statusTextMap = {
       queued: '任务已提交，等待开始...',
-      processing: '云端正在生成 2K/4K 图片，请耐心等待...',
+      processing: '云端正在生成 1K 图片，请耐心等待...',
       completed: '生成完成，正在载入结果...',
       failed: '生成失败',
       cancelled: '生成已取消'
@@ -1815,11 +2092,8 @@ async function generateImages() {
   showGeneratingState();
 
   const startTime = Date.now();
-  const sizeNote = STATE.quality === '4k'
-    ? ' (4K可能需5-15分钟)'
-    : STATE.quality === '2k'
-      ? ' (2K可能需3-8分钟)'
-      : '';
+  STATE.quality = '1k';
+  const sizeNote = '';
   updateGeneratingProgress(startTime, imageCount, sizeNote, '任务正在提交...');
 
   currentAbortController = new AbortController();
@@ -1966,7 +2240,6 @@ function openAdmin() {
   document.getElementById('apiKeyInput').value = '';
   document.getElementById('modelSelect').value = DEFAULTS.model;
   document.getElementById('apiEnabledToggle').checked = DEFAULTS.apiEnabled;
-  updateTimerInfo();
 }
 
 function closeAdmin() {
@@ -1989,6 +2262,7 @@ function adminLogin() {
     
     document.getElementById('adminLoginError').style.display = 'none';
     loadAdminSettingsPanel();
+    activateAdminUserSession();
   } else {
     document.getElementById('adminLoginError').style.display = 'block';
     document.getElementById('adminLoginError').textContent = '拒绝访问 — 密码错误';
@@ -2003,99 +2277,13 @@ function toggleApiKeyVisibility() {
 function toggleApiEnabled() {
   const checked = document.getElementById('apiEnabledToggle').checked;
   if (!checked) {
-    // Manually disabling
     DEFAULTS.apiEnabled = false;
-    DEFAULTS.timerEnd = null;
-    updateTimerInfo();
     updateStatusIndicator();
   } else {
     DEFAULTS.apiEnabled = true;
     updateStatusIndicator();
   }
 }
-
-function setAutoOffTimer() {
-  const hours = parseInt(document.getElementById('timerHours').value) || 0;
-  const minutes = parseInt(document.getElementById('timerMinutes').value) || 0;
-  const totalMs = (hours * 3600 + minutes * 60) * 1000;
-
-  if (totalMs <= 0) {
-    showToast('请设置有效的定时时长', 'error');
-    return;
-  }
-
-  const endTime = new Date(Date.now() + totalMs);
-  DEFAULTS.timerEnd = endTime.toISOString();
-  DEFAULTS.apiEnabled = true;
-  document.getElementById('apiEnabledToggle').checked = true;
-  updateStatusIndicator();
-  updateTimerInfo();
-  scheduleAutoOff();
-
-  const displayTime = endTime.toLocaleTimeString();
-  showToast(`API将在 ${displayTime} 自动关闭`, 'success');
-}
-
-function checkAutoOffTimer() {
-  if (DEFAULTS.timerEnd && DEFAULTS.apiEnabled) {
-    const now = new Date();
-    const end = new Date(DEFAULTS.timerEnd);
-    if (end <= now) {
-      DEFAULTS.apiEnabled = false;
-      DEFAULTS.timerEnd = null;
-      document.getElementById('apiEnabledToggle').checked = false;
-      updateStatusIndicator();
-      updateTimerInfo();
-    } else {
-      scheduleAutoOff();
-      updateTimerInfo();
-    }
-  }
-}
-
-function scheduleAutoOff() {
-  if (STATE.autoOffTimeout) clearTimeout(STATE.autoOffTimeout);
-
-  if (DEFAULTS.timerEnd) {
-    const now = new Date();
-    const end = new Date(DEFAULTS.timerEnd);
-    const delay = end.getTime() - now.getTime();
-    if (delay > 0) {
-      STATE.autoOffTimeout = setTimeout(() => {
-        DEFAULTS.apiEnabled = false;
-        DEFAULTS.timerEnd = null;
-        document.getElementById('apiEnabledToggle').checked = false;
-        updateStatusIndicator();
-        updateTimerInfo();
-        showToast('API已被定时关闭', 'error');
-      }, delay);
-    }
-  }
-}
-
-function updateTimerInfo() {
-  const info = document.getElementById('timerInfo');
-  if (DEFAULTS.timerEnd && DEFAULTS.apiEnabled) {
-    const end = new Date(DEFAULTS.timerEnd);
-    const now = new Date();
-    if (end > now) {
-      const remaining = Math.max(0, end.getTime() - now.getTime());
-      const h = Math.floor(remaining / 3600000);
-      const m = Math.floor((remaining % 3600000) / 60000);
-      const s = Math.floor((remaining % 60000) / 1000);
-      info.style.display = 'block';
-      info.textContent = `⏱ 定时运行中 — API将于 ${end.toLocaleTimeString()} 自动关闭 (剩余 ${h}时${m}分${s}秒)`;
-      return;
-    }
-  }
-  info.style.display = 'none';
-}
-
-// Update timer display every 30 seconds
-setInterval(() => {
-  updateTimerInfo();
-  updateStatusIndicator();
-}, 30000);
 
 function saveAdminSettings() {
   if (!STATE.adminAuthenticated) {
@@ -2139,8 +2327,7 @@ function saveAdminSettings() {
       apiEndpoint: DEFAULTS.apiEndpoint,
       apiKey,
       model: DEFAULTS.model,
-      apiEnabled: DEFAULTS.apiEnabled,
-      timerEnd: DEFAULTS.timerEnd
+      apiEnabled: DEFAULTS.apiEnabled
     })
   }).then(res => res.json())
     .then(data => {
@@ -2151,12 +2338,10 @@ function saveAdminSettings() {
       DEFAULTS.apiEndpoint = data.settings.apiEndpoint || DEFAULTS.apiEndpoint;
       DEFAULTS.model = data.settings.model || DEFAULTS.model;
       DEFAULTS.apiEnabled = data.settings.apiEnabled === true;
-      DEFAULTS.timerEnd = data.settings.timerEnd || null;
       DEFAULTS.apiConfigured = !!data.settings.apiKey;
       document.getElementById('apiEnabledToggle').checked = DEFAULTS.apiEnabled;
       document.getElementById('apiKeyInput').value = '';
       updateStatusIndicator();
-      updateTimerInfo();
       showToast('设置保存成功，所有用户将共用管理员配置的API', 'success');
     }).catch(() => {
       showToast('设置保存失败，请重试', 'error');
@@ -2179,8 +2364,7 @@ function clearAllSettings() {
         apiEndpoint: 'https://api.openai-hk.com/v1/images/generations',
         apiKey: '',
         model: 'gpt-image-2',
-        apiEnabled: false,
-        timerEnd: null
+        apiEnabled: false
       })
     }).then(res => res.json())
       .then(data => {
@@ -2191,13 +2375,11 @@ function clearAllSettings() {
         DEFAULTS.apiEndpoint = data.settings.apiEndpoint;
         DEFAULTS.model = data.settings.model;
         DEFAULTS.apiEnabled = data.settings.apiEnabled === true;
-        DEFAULTS.timerEnd = data.settings.timerEnd || null;
         DEFAULTS.apiConfigured = !!data.settings.apiKey;
         document.getElementById('apiEndpoint').value = DEFAULTS.apiEndpoint;
         document.getElementById('apiKeyInput').value = '';
         document.getElementById('modelSelect').value = DEFAULTS.model;
         document.getElementById('apiEnabledToggle').checked = DEFAULTS.apiEnabled;
-        updateTimerInfo();
         updateStatusIndicator();
         showToast('所有设置已恢复默认', 'success');
       }).catch(() => showToast('恢复默认失败，请重试', 'error'));
@@ -2212,13 +2394,11 @@ function loadAdminSettingsPanel() {
       DEFAULTS.apiEndpoint = data.settings.apiEndpoint || DEFAULTS.apiEndpoint;
       DEFAULTS.model = data.settings.model || DEFAULTS.model;
       DEFAULTS.apiEnabled = data.settings.apiEnabled === true;
-      DEFAULTS.timerEnd = data.settings.timerEnd || null;
       DEFAULTS.apiConfigured = !!data.settings.apiKey;
       document.getElementById('apiEndpoint').value = DEFAULTS.apiEndpoint;
       document.getElementById('apiKeyInput').value = data.settings.apiKey || '';
       document.getElementById('modelSelect').value = DEFAULTS.model;
       document.getElementById('apiEnabledToggle').checked = DEFAULTS.apiEnabled;
-      updateTimerInfo();
       updateStatusIndicator();
     })
     .catch(() => showToast('读取管理员设置失败', 'error'));
@@ -2266,18 +2446,7 @@ function showToast(message, type) {
 window.addEventListener('DOMContentLoaded', () => {
   initUser();
   loadSettings();
-  
-  // Try to load history from storage
-  try {
-    const saved = localStorage.getItem('cyberforge_history');
-    if (saved) {
-      STATE.history = JSON.parse(saved);
-      renderHistory();
-    }
-  } catch(e) {
-    console.log("Failed to load history, might be too large");
-    localStorage.removeItem('cyberforge_history');
-  }
+  loadHistory();
 });
 
 // ===================== KEYBOARD SHORTCUTS =====================
@@ -2321,14 +2490,7 @@ function selectRatioUI(ratio, btn) {
 }
 
 function selectQualityUI(quality, btn) {
-  // Call original function
-  STATE.quality = quality;
-  
-  // Update UI active state
-  document.querySelectorAll('#qualitySelector .ratio-card').forEach(card => {
-    card.classList.remove('active');
-  });
-  btn.classList.add('active');
+  STATE.quality = '1k';
 }
 
 function applyTemplate(title, prompt) {

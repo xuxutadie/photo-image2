@@ -15,7 +15,7 @@ new_html = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>新起点画室 - AI绘图工具</title>
+<title>智影魔图 - AI绘图工具</title>
 <style>
 /* CYBERPUNK THEME REFACTORED */
 :root {
@@ -75,12 +75,16 @@ body {
   gap: 12px;
 }
 .header-logo-icon {
-  width: 32px; height: 32px;
+  width: 28px; height: 28px;
   background: var(--neon-blue);
   border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
-  font-weight: bold; color: #fff;
+  font-weight: bold; color: #fff; font-size: 12px;
   box-shadow: var(--glow-blue);
+}
+.header-logo-img {
+  width: 32px; height: 32px;
+  object-fit: contain;
 }
 .header-title-left {
   font-size: 16px; font-weight: 600; color: var(--text-bright);
@@ -286,13 +290,19 @@ body {
 .frame-tr { position: absolute; top: -1px; right: -1px; width: 20px; height: 20px; border: 2px solid var(--neon-cyan); border-left: none; border-bottom: none; }
 .frame-bl { position: absolute; bottom: -1px; left: -1px; width: 20px; height: 20px; border: 2px solid var(--neon-cyan); border-right: none; border-top: none; }
 
-.ai-logo-center {
+.ai-logo-center,
+.ai-logo-center-img {
   width: 80px; height: 80px; border-radius: 50%;
   border: 2px solid var(--neon-blue);
   display: flex; align-items: center; justify-content: center;
   font-size: 32px; font-weight: bold; color: var(--neon-cyan);
   box-shadow: 0 0 30px rgba(0, 229, 255, 0.3), inset 0 0 20px rgba(0, 229, 255, 0.2);
   margin-bottom: 24px; position: relative;
+}
+.ai-logo-center-img {
+  object-fit: contain;
+  background: rgba(41, 121, 255, 0.1);
+  border: 1px solid var(--neon-blue);
 }
 .ai-logo-center::after {
   content: ''; position: absolute; bottom: -20px; width: 120px; height: 10px;
@@ -393,10 +403,10 @@ body {
 <!-- HEADER -->
 <header class="header">
   <div class="header-left">
-    <div class="header-logo-icon">AI</div>
-    <div class="header-title-left">AI绘图工具</div>
+    <img src="图标素材/logo.png" class="header-logo-img" alt="Logo">
+    <div class="header-title-left">IMAGE-2</div>
   </div>
-  <div class="header-center">新起点画室</div>
+  <div class="header-center">智影魔图</div>
   <div class="header-right">
     <div class="header-right-item"><span>💎</span> 会员中心</div>
     <div class="header-right-item"><span>❓</span> 使用教程</div>
@@ -521,7 +531,7 @@ body {
       <div class="frame-bl"></div>
       
       <div id="centerEmpty">
-        <div class="ai-logo-center">AI</div>
+        <img src="图标素材/logo.png" class="ai-logo-center-img" alt="Logo">
         <div class="center-empty-text">
           输入提示词，选择参数，点击“生成图片”<br>
           AI 将为你创作精美的图像

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CYBER FORGE - Python 本地代理服务器
+智影魔图 - Python 本地代理服务器
 解决跨域CORS问题，无需安装任何依赖（仅用Python标准库）
 
 使用方法: python server.py
